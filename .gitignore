@@ -1,0 +1,9 @@
+out
+.vs
+build/
+_deps/
+roblox-dumper.log
+offsets.h
+offsets.json
+offsets.py
+offsets.cs

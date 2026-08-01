@@ -1,0 +1,37 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+# Braces
+BreakBeforeBraces: Attach
+BraceWrapping:
+  AfterNamespace: true      
+
+# Namespace indentation
+NamespaceIndentation: All  
+
+# Indentation
+IndentCaseLabels: true
+IndentPPDirectives: BeforeHash
+
+# Spacing
+SpaceBeforeParens: ControlStatements
+SpaceAfterCStyleCast: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# Alignment
+AlignOperands: true
+AlignTrailingComments: true
+
+# Pointers
+PointerAlignment: Left
+
+# Misc
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+SortIncludes: true

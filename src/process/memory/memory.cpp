@@ -4,7 +4,12 @@
 
 namespace process {
     auto Memory::read_bytes(uintptr_t address, size_t size) -> std::vector<uint8_t> {
-        std::vector<uint8_t> buffer(size);
+        std::vector<uint8_t> buffer;
+        try {
+            buffer.resize(size);
+        } catch (const std::bad_alloc&) {
+            return {};
+        }
         if (!g_process.read_memory(address, buffer.data(), size)) {
             return {};
         }
@@ -72,9 +77,17 @@ namespace process {
             return matches;
         }
 
+        // Guard against enormous regions (Sober exposes huge anonymous mappings)
+        // that would throw std::bad_alloc if fully buffered.
+        constexpr size_t k_max_scan_bytes = 0x40000000; // 1 GiB
+
         if (!section.empty()) {
             auto sec = g_process.get_section(section);
             if (!sec) {
+                return matches;
+            }
+
+            if (sec->second > k_max_scan_bytes) {
                 return matches;
             }
 
@@ -95,6 +108,7 @@ namespace process {
         // Scan all readable regions
         for (const auto& region : g_process.get_regions()) {
             if (!region.readable) continue;
+            if (region.size > k_max_scan_bytes) continue;
 
             auto buffer = read_bytes(region.start, region.size);
             if (buffer.size() < target.size()) continue;

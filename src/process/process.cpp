@@ -295,10 +295,22 @@ namespace process {
             return std::nullopt;
         }
 
+        // Sanity checks: Sober's in-memory ELF can report bogus section tables
+        constexpr size_t k_max_sections = 4096;
+        constexpr size_t k_max_strtab = 16 * 1024 * 1024;
+        if (ehdr.shnum > k_max_sections || ehdr.shentsize > 128) {
+            return std::nullopt;
+        }
+
         // Section headers might not be mapped in memory (they're in the file, not a PT_LOAD segment).
         // Try reading them. If this fails, fall back to maps-based section detection.
         size_t shdr_table_size = static_cast<size_t>(ehdr.shentsize) * ehdr.shnum;
-        std::vector<uint8_t> shdr_data(shdr_table_size);
+        std::vector<uint8_t> shdr_data;
+        try {
+            shdr_data.resize(shdr_table_size);
+        } catch (const std::bad_alloc&) {
+            return std::nullopt;
+        }
 
         if (!read_memory(m_module_base + ehdr.shoff, shdr_data.data(), shdr_table_size)) {
             return std::nullopt;
@@ -323,7 +335,16 @@ namespace process {
             return std::nullopt;
         }
 
-        std::vector<char> shstrtab_data(shstrtab_shdr.sh_size);
+        if (shstrtab_shdr.sh_size > k_max_strtab) {
+            return std::nullopt;
+        }
+
+        std::vector<char> shstrtab_data;
+        try {
+            shstrtab_data.resize(shstrtab_shdr.sh_size);
+        } catch (const std::bad_alloc&) {
+            return std::nullopt;
+        }
         if (!read_memory(m_module_base + shstrtab_shdr.sh_offset,
                          shstrtab_data.data(), shstrtab_shdr.sh_size)) {
             return std::nullopt;

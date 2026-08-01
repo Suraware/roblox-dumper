@@ -25,6 +25,9 @@ namespace process {
         const uintptr_t section_start = section->first;
         const uintptr_t section_end = section_start + section->second;
 
+        // Guard against bogus ELF section sizes in Sober's in-memory binary
+        constexpr size_t k_max_region_read = 0x20000000; // 512 MiB per region chunk
+
         // Find the range in our regions that covers .text
         uintptr_t current = section_start;
 
@@ -39,6 +42,11 @@ namespace process {
 
             const uintptr_t region_start = it->start;
             const uintptr_t region_end = std::min(it->end, section_end);
+
+            if (region_end - region_start > k_max_region_read) {
+                current = region_end;
+                continue;
+            }
 
             auto buffer = Memory::read_bytes(region_start, region_end - region_start);
 

@@ -86,13 +86,15 @@ namespace dumper {
         threads.emplace_back(safe([]() { stages::task_scheduler::dump(); }, "task_scheduler"));
         threads.emplace_back(safe([]() { stages::script_context::dump(); }, "script_context"));
         threads.emplace_back(safe([]() { stages::vehicle_seat::dump(); }, "vehicle_seat"));
-        threads.emplace_back(safe([]() { stages::sound::dump(); }, "sound"));
+        // Disabled on this client: value scans matched uninitialized memory instead of
+        // property defaults (no distinctive anchors present in the objects).
+        // threads.emplace_back(safe([]() { stages::sound::dump(); }, "sound"));
+        // threads.emplace_back(safe([]() { stages::depth_of_field::dump(); }, "depth_of_field"));
+        // threads.emplace_back(safe([]() { stages::sun_rays_effect::dump(); }, "sun_rays_effect"));
+        // threads.emplace_back(safe([]() { stages::misc::dump(); }, "misc"));
         threads.emplace_back(safe([]() { stages::beam::dump(); }, "beam"));
         threads.emplace_back(safe([]() { stages::attachment::dump(); }, "attachment"));
-        threads.emplace_back(safe([]() { stages::depth_of_field::dump(); }, "depth_of_field"));
-        threads.emplace_back(safe([]() { stages::sun_rays_effect::dump(); }, "sun_rays_effect"));
         threads.emplace_back(safe([]() { stages::model::dump(); }, "model"));
-        threads.emplace_back(safe([]() { stages::misc::dump(); }, "misc"));
 
         for (auto& thread : threads) {
             thread.join();

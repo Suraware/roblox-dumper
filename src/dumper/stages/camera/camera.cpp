@@ -30,8 +30,8 @@ auto dumper::stages::camera::dump() -> bool {
         g_dumper.add_offset("Camera", "Rotation", *cf);
     }
 
-    // FieldOfView = float [30, 120]
-    auto fov = process::helpers::find_float_range(ca, 30.0f, 120.0f, 0x400, 4);
+    // FieldOfView = float 70.0 (default anchor; only add if the default is present)
+    auto fov = process::helpers::find_offset<float>(ca, 70.0f, 0x400, 4);
     if (fov) g_dumper.add_offset("Camera", "FieldOfView", *fov);
 
     // ViewportSize via bridge, or fallback to int16 heuristic

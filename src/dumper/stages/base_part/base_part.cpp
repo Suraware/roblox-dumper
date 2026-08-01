@@ -63,24 +63,28 @@ namespace dumper::stages::base_part {
             dumper::g_dumper.add_offset("Primitive", "Orientation", *cf);
         }
 
-        // Size = vec3 (0.01, 100)
-        auto sz = process::helpers::find_vec3_pred(prim_addrs[0], [](const std::array<float,3>& v) {
+        // Size = vec3 (0.01, 100) near 0x1B8 (reference window)
+        auto sz = process::helpers::find_vec3_pred(prim_addrs[0] + 0x1B0, [](const std::array<float,3>& v) {
             return v[0] > 0.01f && v[0] < 100.0f && v[1] > 0.01f && v[1] < 100.0f && v[2] > 0.01f && v[2] < 100.0f;
-        }, 0x400, 4);
-        if (sz) dumper::g_dumper.add_offset("Primitive", "Size", *sz);
+        }, 0x20, 4);
+        if (sz) dumper::g_dumper.add_offset("Primitive", "Size", 0x1B0 + *sz);
 
-        // Color = u32 > 0 && <= 0xFFFFFF
-        for (size_t off = 0; off < 0x300; off += 4) {
-            auto v = process::Memory::read<uint32_t>(prim_addrs[0] + off);
-            if (v && *v > 0 && *v <= 0xFFFFFF) {
-                dumper::g_dumper.add_offset("Primitive", "Color", off);
-                break;
-            }
+        // Transparency = float [0,1] near 0x44 (reference window)
+        auto trans = process::helpers::find_float_range(prim_addrs[0] + 0x38, 0.0f, 1.0f, 0x18, 4);
+        if (trans) dumper::g_dumper.add_offset("Primitive", "Transparency", 0x38 + *trans);
+
+        // Assembly velocities near 0x1B0 (reference window)
+        auto alv = process::helpers::find_vec3_pred(
+            prim_addrs[0] + 0x1A8, [](const std::array<float, 3>& v) {
+                return std::abs(v[0]) < 1000.0f && std::abs(v[1]) < 1000.0f &&
+                       std::abs(v[2]) < 1000.0f;
+            },
+            0x18, 4);
+        if (alv) {
+            const auto off = 0x1A8 + *alv;
+            dumper::g_dumper.add_offset("Primitive", "AssemblyLinearVelocity", off);
+            dumper::g_dumper.add_offset("Primitive", "AssemblyAngularVelocity", off + 0xC);
         }
-
-        // Transparency = float [0,1]
-        auto trans = process::helpers::find_float_range(prim_addrs[0], 0.0f, 1.0f, 0x300, 4);
-        if (trans) dumper::g_dumper.add_offset("Primitive", "Transparency", *trans);
 
         // PrimitiveFlags
         for (size_t off = 0; off < 0x300; off += 1) {
@@ -98,15 +102,6 @@ namespace dumper::stages::base_part {
             }
         }
 
-        // AssemblyLinearVelocity/AngularVelocity
-        auto alv = process::helpers::find_vec3_pred(prim_addrs[0], [](const std::array<float,3>& v) {
-            return std::abs(v[0]) < 1e6f;
-        }, 0x300, 4);
-        if (alv) {
-            dumper::g_dumper.add_offset("Primitive", "AssemblyLinearVelocity", *alv);
-            dumper::g_dumper.add_offset("Primitive", "AssemblyAngularVelocity", *alv + 0xC);
-        }
-
         // BasePart fields: scan on part addresses
         std::vector<uintptr_t> part_addrs;
         for (auto& p : parts_insts) part_addrs.push_back(p.get_address());
@@ -117,29 +112,26 @@ namespace dumper::stages::base_part {
         }, 0x400, 4);
         if (bp_sz) dumper::g_dumper.add_offset("BasePart", "Size", *bp_sz);
 
-        // Color3 = vec3 [0,1]
-        auto col3 = process::helpers::find_vec3_range(part_addrs[0], 0.0f, 1.0f, 0x400, 4);
-        if (col3) dumper::g_dumper.add_offset("BasePart", "Color3", *col3);
+        // Color3 = vec3 with equal components (gray) in [0.1, 1], near 0x194
+        auto col3 = process::helpers::find_vec3_pred(
+            part_addrs[0] + 0x180, [](const std::array<float, 3>& v) {
+                return v[0] > 0.1f && v[0] <= 1.0f && std::abs(v[0] - v[1]) < 0.01f &&
+                       std::abs(v[1] - v[2]) < 0.01f;
+            },
+            0x40, 4);
+        if (col3) dumper::g_dumper.add_offset("BasePart", "Color3", 0x180 + *col3);
 
-        // Transparency/Reflectance
-        auto bpt = process::helpers::find_float_range(part_addrs[0], 0.0f, 1.0f, 0x300, 4);
-        if (bpt) dumper::g_dumper.add_offset("BasePart", "Transparency", *bpt);
+        // Transparency = float [0,1] near 0x164
+        auto bpt = process::helpers::find_float_range(part_addrs[0] + 0x150, 0.0f, 1.0f, 0x30, 4);
+        if (bpt) dumper::g_dumper.add_offset("BasePart", "Transparency", 0x150 + *bpt);
 
-        // Reflectance: scan past Transparency's offset
-        std::optional<size_t> bpr;
-        if (bpt) {
-            for (size_t off = *bpt + 4; off < 0x300; off += 4) {
-                auto v = process::Memory::read<float>(part_addrs[0] + off);
-                if (v && *v >= 0.0f && *v <= 1.0f) { bpr = off; break; }
-            }
-        } else {
-            bpr = process::helpers::find_float_range(part_addrs[0], 0.0f, 1.0f, 0x300, 4);
-        }
-        if (bpr) dumper::g_dumper.add_offset("BasePart", "Reflectance", *bpr);
+        // Reflectance = float [0,1] near 0xE0
+        auto bpr = process::helpers::find_float_range(part_addrs[0] + 0xD0, 0.0f, 1.0f, 0x20, 4);
+        if (bpr) dumper::g_dumper.add_offset("BasePart", "Reflectance", 0xD0 + *bpr);
 
-        // Shape = u32 [0,10]
-        auto shape = process::helpers::find_u32_range(part_addrs[0], 0, 10, 0x400, 4);
-        if (shape) dumper::g_dumper.add_offset("BasePart", "Shape", *shape);
+        // Shape = u32 [0,10] near 0x1B0
+        auto shape = process::helpers::find_u32_range(part_addrs[0] + 0x1A8, 0, 10, 0x18, 4);
+        if (shape) dumper::g_dumper.add_offset("BasePart", "Shape", 0x1A8 + *shape);
 
         // Bools: Locked, Massless, CastShadow
         for (size_t off = 0x1A0; off < 0x1B0; off++) {

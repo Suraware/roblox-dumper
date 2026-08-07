@@ -115,6 +115,36 @@ namespace dumper::stages::base_part {
                 dumper::g_dumper.add_offset("Primitive", "Size", best);
         }
 
+        // Size raw fallback: every primitive must hold a sane strictly-positive
+        // vec3 at the same offset (CFrame rows / Position contain zeros/negatives,
+        // denormal garbage fails the 0.001 floor, so this picks the real Size).
+        if (!dumper::g_dumper.get_offset("Primitive", "Size") && prim_addrs.size() >= 2) {
+            size_t best = 0, best_matches = 0;
+            for (size_t off = 0; off < 0x300; off += 4) {
+                size_t matches = 0;
+                for (size_t i = 0; i < prim_addrs.size(); i++) {
+                    auto s = process::Memory::read<float>(prim_addrs[i] + off);
+                    auto s2 = process::Memory::read<float>(prim_addrs[i] + off + 4);
+                    auto s3 = process::Memory::read<float>(prim_addrs[i] + off + 8);
+                    if (s && s2 && s3 && *s > 0.001f && *s2 > 0.001f && *s3 > 0.001f &&
+                        *s < 100000.0f && *s2 < 100000.0f && *s3 < 100000.0f)
+                        matches++;
+                }
+                if (matches > best_matches) { best_matches = matches; best = off; }
+            }
+            if (best_matches >= 2) {
+                spdlog::info("[dbg part] size raw fallback 0x{:X} (all {}/{} prims positive vec3)", best, best_matches, prim_addrs.size());
+                for (size_t i = 0; i < prim_addrs.size(); i++) {
+                    auto s = process::Memory::read<float>(prim_addrs[i] + best);
+                    auto s2 = process::Memory::read<float>(prim_addrs[i] + best + 4);
+                    auto s3 = process::Memory::read<float>(prim_addrs[i] + best + 8);
+                    if (s && s2 && s3)
+                        spdlog::info("[dbg part] prim{} size = ({}, {}, {})", i, *s, *s2, *s3);
+                }
+                dumper::g_dumper.add_offset("Primitive", "Size", best);
+            }
+        }
+
         // Flags: u32 where bit0 == can_collide across matched parts (calibration varies it)
         {
             for (size_t off = 0; off < 0x300; off += 4) {
@@ -144,6 +174,41 @@ namespace dumper::stages::base_part {
                         break;
                     }
                 }
+            }
+        }
+
+        // Flags raw fallback: u32 whose four bytes are each 0x00/0x01 with >= 2
+        // bytes set and bit0 set on every primitive (packed property bytes, e.g.
+        // 0x01010101 = CanCollide|Anchored|...; excludes constant-1 and float
+        // candidates). CanCollide = bit0.
+        if (!dumper::g_dumper.get_offset("Primitive", "Flags") && prim_addrs.size() >= 2) {
+            size_t best = 0, best_matches = 0;
+            for (size_t off = 0; off < 0x300; off += 4) {
+                size_t matches = 0;
+                for (size_t i = 0; i < prim_addrs.size(); i++) {
+                    auto v = process::Memory::read<uint32_t>(prim_addrs[i] + off);
+                    if (!v || (*v & 1u) == 0) continue;
+                    uint32_t t = *v;
+                    int bytes_set = 0;
+                    bool byte_ok = true;
+                    for (int b = 0; b < 4; b++) {
+                        uint8_t byte = (t >> (b * 8)) & 0xFFu;
+                        if (byte > 1) { byte_ok = false; break; }
+                        if (byte) bytes_set++;
+                    }
+                    if (byte_ok && bytes_set >= 2) matches++;
+                }
+                if (matches > best_matches) { best_matches = matches; best = off; }
+            }
+            if (best_matches >= 2) {
+                spdlog::info("[dbg part] flags raw fallback 0x{:X} ({} prims byte-flag pattern)", best, best_matches);
+                for (size_t i = 0; i < prim_addrs.size(); i++) {
+                    auto v = process::Memory::read<uint32_t>(prim_addrs[i] + best);
+                    if (v) spdlog::info("[dbg part] prim{} flags = 0x{:08X}", i, *v);
+                }
+                dumper::g_dumper.add_offset("Primitive", "Flags", best);
+                dumper::g_dumper.add_offset("Primitive", "PrimitiveFlags", best);
+                dumper::g_dumper.add_offset("PrimitiveFlags", "CanCollide", 1);
             }
         }
 

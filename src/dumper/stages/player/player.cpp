@@ -181,6 +181,41 @@ namespace dumper::stages::player {
             lp, R"([a-z]{2}-[a-z]{2})", 0x800, 0x8, 32, true);
         if (locale_id) dumper::g_dumper.add_offset("Player", "LocaleId", *locale_id);
 
+        // DisplayName raw fallback: inline short rbx-string (byte0 = len*2,
+        // data at +1). Pick the longest printable name-like string (no
+        // punctuation; e.g. "LinxuMint" @ 0x120, not instance GUIDs).
+        if (!dumper::g_dumper.get_offset("Player", "DisplayName")) {
+            size_t best = 0, best_len = 0;
+            for (size_t off = 0; off < 0x600; off++) {
+                auto hdr = process::Memory::read<uint8_t>(lp + off);
+                if (!hdr || (*hdr & 1u) || *hdr == 0) continue;
+                size_t len = *hdr >> 1;
+                if (len < 3 || len > 24) continue;
+                auto buf = process::Memory::read_bytes(lp + off + 1, len);
+                if (buf.empty()) continue;
+                bool name_like = true, has_letter = false;
+                for (size_t i = 0; i < len; i++) {
+                    auto c = buf[i];
+                    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                          (c >= '0' && c <= '9') || c == '_' || c == ' ')) {
+                        name_like = false;
+                        break;
+                    }
+                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) has_letter = true;
+                }
+                if (!name_like || !has_letter) continue;
+                if (len > best_len) { best_len = len; best = off; }
+            }
+            if (best_len >= 3) {
+                auto b = process::Memory::read_bytes(lp + best + 1, best_len);
+                if (!b.empty()) {
+                    spdlog::info("[dbg lp] DisplayName fallback 0x{:X} = '{}'",
+                                 best, std::string(b.begin(), b.end()));
+                    dumper::g_dumper.add_offset("Player", "DisplayName", best);
+                }
+            }
+        }
+
         return true;
     }
 } // namespace dumper::stages::player

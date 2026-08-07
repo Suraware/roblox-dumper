@@ -6,8 +6,8 @@
     do {                                                                                           \
         const auto offset = process::helpers::find_offset<type>(base_addr, target, max, align);    \
         if (!offset) {                                                                             \
-            spdlog::error("Failed to find {} in {}", #name, #namespace_name);                      \
-            return false;                                                                          \
+            spdlog::warn("Failed to find {} in {} (continuing)", #name, #namespace_name);          \
+            break;                                                                                 \
         }                                                                                          \
         dumper::g_dumper.add_offset(#namespace_name, #name, *offset);                              \
     } while (0)

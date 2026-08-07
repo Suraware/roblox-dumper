@@ -35,6 +35,10 @@ namespace dumper::stages::visual_engine {
         g_ve_addr = *ve_obj;
         g_visual_engine = g_ve_addr;
         spdlog::info("VisualEngine at 0x{:x} (abs=0x{:x})", g_ve_addr, ve_abs);
+
+        // Emit the RVA of the pointer slot that holds the VisualEngine object,
+        // so external code can resolve it as base + VisualEngine::Pointer.
+        g_dumper.add_offset("VisualEngine", "Pointer", ve_abs - base);
         return true;
     }
 

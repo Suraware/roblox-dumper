@@ -5,7 +5,7 @@ export function baseOptions(): BaseLayoutProps {
     nav: {
       title: "Roblox Dumper",
     },
-    githubUrl: "https://github.com/nopjo/roblox-dumper",
+    githubUrl: "https://github.com/",
     links: [],
   };
 }

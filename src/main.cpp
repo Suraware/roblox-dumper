@@ -13,8 +13,7 @@ auto main() -> int {
 
     const auto title = std::format("{} {} (Linux Port)", PROJECT_NAME, PROJECT_VERSION);
 
-    spdlog::info("{} ported from nopjo/roblox-dumper", title);
-    spdlog::info("Github: https://github.com/nopjo/roblox-dumper\n");
+    spdlog::info("{} created by LovelaceCoins (dumped by Coins)", title);
 
     if (!process::g_process.attach("sober")) {
         spdlog::error("Failed to attach to Sober. Make sure Sober is running.");

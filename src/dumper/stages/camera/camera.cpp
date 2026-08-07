@@ -30,16 +30,51 @@ auto dumper::stages::camera::dump() -> bool {
         g_dumper.add_offset("Camera", "Rotation", *cf);
     }
 
-    // FieldOfView = float 70.0 (default anchor; only add if the default is present)
-    auto fov = process::helpers::find_offset<float>(ca, 70.0f, 0x400, 4);
+    // FieldOfView = float 70.0 (default anchor), tolerant of client variations
+    auto fov = process::helpers::find_float_range(ca, 40.0f, 130.0f, 0x400, 4);
     if (fov) g_dumper.add_offset("Camera", "FieldOfView", *fov);
+    if (!fov) {
+        // Some clients push vertical+horizontal FOV together; anchor on 70.0/120.0
+        auto fov70 = process::helpers::find_offset<float>(ca, 70.0f, 0x400, 4);
+        if (fov70) g_dumper.add_offset("Camera", "FieldOfView", *fov70);
+    }
+
+    // ImagePlaneDepth = 0.5 * tan(FOV/2), stored near FieldOfView
+    if (fov) {
+        for (size_t off = *fov > 0x20 ? *fov - 0x20 : 0; off < *fov + 0x20; off += 4) {
+            auto v = process::Memory::read<float>(ca + off);
+            if (v && !std::isnan(*v) && !std::isinf(*v) && *v > 0.2f && *v < 1.0f) {
+                g_dumper.add_offset("Camera", "ImagePlaneDepth", off);
+                break;
+            }
+        }
+    }
 
     // ViewportSize via bridge, or fallback to int16 heuristic
     auto viewport_info = bridge::g_bridge.read_camera_information();
     if (viewport_info) {
         glm::vec2 vs(viewport_info->viewport_width, viewport_info->viewport_height);
         auto vo = process::helpers::find_vec_offset(ca, vs, 0x400, 5.0f, 0x4);
-        if (vo) g_dumper.add_offset("Camera", "ViewportSize", *vo);
+        if (vo) {
+            g_dumper.add_offset("Camera", "ViewportSize", *vo);
+            g_dumper.add_offset("Camera", "Viewport_Width", *vo);
+            g_dumper.add_offset("Camera", "Viewport_Height", *vo + 4);
+
+            // ViewportSpoof = u32 == packed (w | h<<16) anywhere in Camera
+            uint32_t packed = (static_cast<uint32_t>(static_cast<uint16_t>(viewport_info->viewport_width))) |
+                              (static_cast<uint32_t>(static_cast<uint16_t>(viewport_info->viewport_height)) << 16);
+            for (size_t off = 0; off < 0x500; off += 4) {
+                auto vp = process::Memory::read<uint32_t>(ca + off);
+                if (vp && *vp == packed) {
+                    g_dumper.add_offset("Camera", "ViewportSpoof", off);
+                    break;
+                }
+            }
+            for (size_t off = 0; off < 0x500; off += 4) {
+                auto vp = process::Memory::read<uint32_t>(ca + off);
+                if (vp) spdlog::info("[dbg camera] ca+0x{:X} u32 = 0x{:X}", off, *vp);
+            }
+        }
 
         auto vx = static_cast<int16_t>(viewport_info->viewport_width);
         auto vy = static_cast<int16_t>(viewport_info->viewport_height);

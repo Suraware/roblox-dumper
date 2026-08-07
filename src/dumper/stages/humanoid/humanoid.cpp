@@ -58,9 +58,9 @@ namespace dumper::stages::humanoid {
         auto hdd = read_float(ha + H + 8);
         if (hdd && *hdd >= 50.0f && *hdd <= 500.0f) dumper::g_dumper.add_offset("Humanoid", "HealthDisplayDistance", H + 8);
 
-        // HipHeight = H+0xC, float [1, 8]
-        auto hh = read_float(ha + H + 0xC);
-        if (hh && *hh >= 1.0f && *hh <= 8.0f) dumper::g_dumper.add_offset("Humanoid", "HipHeight", H + 0xC);
+        // HipHeight = H+0x10, float [1, 8]
+        auto hh = read_float(ha + H + 0x10);
+        if (hh && *hh >= 1.0f && *hh <= 8.0f) dumper::g_dumper.add_offset("Humanoid", "HipHeight", H + 0x10);
 
         // JumpHeight = H+0x18, float [1, 150]
         auto jh = read_float(ha + H + 0x18);
@@ -78,6 +78,10 @@ namespace dumper::stages::humanoid {
             if (v && *v >= 14.0f && *v <= 30.0f) { ws_off = off; break; }
         }
         if (ws_off) dumper::g_dumper.add_offset("Humanoid", "WalkSpeed", *ws_off);
+
+        // WalkSpeedCheck = WalkSpeed+0x1EC, float [14, 30] (engine's speed check copy)
+        auto wsc = read_float(ha + *ws_off + 0x1EC);
+        if (wsc && *wsc >= 14.0f && *wsc <= 30.0f) dumper::g_dumper.add_offset("Humanoid", "WalkSpeedCheck", *ws_off + 0x1EC);
 
         // === RigType at 0x1A4, u32 [0, 4] ===
         for (size_t off = 0x1A0; off < 0x1B0; off += 4) {

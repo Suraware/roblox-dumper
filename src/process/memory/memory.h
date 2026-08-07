@@ -28,5 +28,6 @@ namespace process {
         static auto read_roblox_string(uintptr_t address) -> std::optional<std::string>;
         static auto scan_string(const std::string& target, std::string_view section = "")
             -> std::vector<uintptr_t>;
+        static auto scan_string_module(const std::string& target) -> std::vector<uintptr_t>;
     };
 } // namespace process

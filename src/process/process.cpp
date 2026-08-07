@@ -89,7 +89,7 @@ namespace process {
 
         std::optional<int> cmdline_fallback;
         std::optional<int> sober_pid;
-        std::optional<int> main_pid;
+        std::vector<int> main_candidates;
 
         for (const auto& entry : fs::directory_iterator("/proc")) {
             if (!entry.is_directory()) continue;
@@ -110,9 +110,10 @@ namespace process {
 
             // For "sober" target: find child "Main" process (the actual Roblox instance)
             if (target == "sober") {
-                if (comm_name == "sober" || comm_name == "Main") {
-                    if (comm_name == "Main") main_pid = std::stoi(pid_str);
-                    else sober_pid = std::stoi(pid_str);
+                if (comm_name == "Main") {
+                    main_candidates.push_back(std::stoi(pid_str));
+                } else if (comm_name == "sober") {
+                    sober_pid = std::stoi(pid_str);
                 }
                 // Cmdline fallback
                 std::ifstream cmdline(entry.path() / "cmdline");
@@ -123,16 +124,29 @@ namespace process {
             }
         }
 
-        // Priority: Main child > sober child of Main > sober parent > cmdline fallback
+        // Priority: memfd:sober Main > any-memfd Main > Main child of sober > sober > cmdline fallback
         if (target == "sober") {
-            // If we found a "Main" process, check if it has memfd mappings
-            if (main_pid) {
-                std::ifstream c_maps(fs::path("/proc") / std::to_string(*main_pid) / "maps");
+            const auto has_mapping = [](int pid, const std::string& needle) -> bool {
+                std::ifstream c_maps(fs::path("/proc") / std::to_string(pid) / "maps");
                 std::string ml;
                 while (std::getline(c_maps, ml)) {
-                    if (ml.find("memfd") != std::string::npos) return main_pid;
+                    if (ml.find(needle) != std::string::npos) return true;
                 }
+                return false;
+            };
+
+            // The real Roblox game is the "Main" whose executable memfd is named "sober"
+            // (Studio's wine processes also show comm "Main" and memfd mappings).
+            for (const auto& cand : main_candidates) {
+                if (has_mapping(cand, "/memfd:sober")) return cand;
             }
+            // Fall back to any Main with memfd mappings
+            for (const auto& cand : main_candidates) {
+                if (has_mapping(cand, "memfd")) return cand;
+            }
+            std::optional<int> main_pid = main_candidates.empty()
+                                             ? std::nullopt
+                                             : std::optional<int>(main_candidates.back());
 
             // Find children of sober_pid or main_pid that have memfd
             std::optional<int> root = main_pid ? main_pid : sober_pid;
@@ -437,30 +451,57 @@ namespace process {
     auto Process::get_version() const -> std::optional<std::string> {
         if (!m_pid) return std::nullopt;
 
-        // Read /proc/pid/cmdline for Sober version info
-        std::ifstream cmdline("/proc/" + std::to_string(m_pid) + "/cmdline");
-        std::string cl((std::istreambuf_iterator<char>(cmdline)), {});
+        // Dynamically find the Roblox build hash in the target's memory.
+        // The full 40-char build hash (e.g. 199da195b4fd47471fbb2e6009b233e1f5430cd7)
+        // sits in the client's .rodata right after the "Setting Roblox cookies" log
+        // string. Linux/Sober runs a different build than the Windows client, so
+        // the hash (and the offsets) must come from the actual running binary.
+        static const std::string k_marker = "Setting Roblox cookies";
+        static const std::string k_fallback = "199da195b4fd47";
 
-        // Look for version-xxxxxxxxxxxxxxxx pattern (Sober)
-        std::regex version_regex(R"(version-[a-f0-9]{16,40})");
-        std::smatch match;
-        if (std::regex_search(cl, match, version_regex)) {
-            return match.str();
-        }
+        for (const auto& region : m_regions) {
+            if (!region.readable || region.size == 0) continue;
+            if (region.size > 512ull * 1024 * 1024) continue;
 
-        // Alternatively, try reading /proc/pid/exe symlink
-        char exe_path[4096] = {};
-        std::string proc_exe = "/proc/" + std::to_string(m_pid) + "/exe";
-        ssize_t len = ::readlink(proc_exe.c_str(), exe_path, sizeof(exe_path) - 1);
-        if (len > 0) {
-            exe_path[len] = '\0';
-            std::string path(exe_path);
-            if (std::regex_search(path, match, version_regex)) {
-                return match.str();
+            const size_t chunk_size = std::min<size_t>(region.size, 64ull * 1024 * 1024);
+            std::vector<char> buf(chunk_size);
+            size_t offset = 0;
+            while (offset < region.size) {
+                const size_t to_read = std::min(chunk_size, region.size - offset);
+                if (!read_memory(region.start + offset, buf.data(), to_read)) break;
+                const std::string_view view(buf.data(), to_read);
+
+                size_t pos = 0;
+                while ((pos = view.find(k_marker, pos)) != std::string_view::npos) {
+                    // Look for a 40-char hex hash within 128 bytes after the marker
+                    const std::string_view tail = view.substr(pos + k_marker.size(),
+                                                              std::min(to_read - pos - k_marker.size(),
+                                                                       size_t(128)));
+                    for (size_t h = 0; h + 40 <= tail.size(); ++h) {
+                        bool is_hex = true;
+                        for (size_t c = 0; c < 40; ++c) {
+                            const char ch = tail[h + c];
+                            if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+                                  (ch >= 'A' && ch <= 'F'))) {
+                                is_hex = false;
+                                break;
+                            }
+                        }
+                        if (is_hex) {
+                            std::string hash = std::string(tail.substr(h, 40));
+                            for (auto& ch : hash) ch = static_cast<char>(std::tolower(ch));
+                            return hash;
+                        }
+                    }
+                    pos += k_marker.size();
+                }
+
+                offset += to_read;
             }
         }
 
-        return std::nullopt;
+        spdlog::warn("Build hash not found in memory, using fallback {}", k_fallback);
+        return k_fallback;
     }
 
 } // namespace process

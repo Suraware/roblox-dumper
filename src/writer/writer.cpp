@@ -53,8 +53,7 @@ namespace dumper::writer {
         std::string comment = "/*\n";
         comment += " * Dumped With: " + std::string(PROJECT_NAME) + " " +
                    std::string(PROJECT_VERSION) + "\n";
-        comment += " * Created by: Jonah (jonahw on Discord)\n";
-        comment += " * Github: https://github.com/nopjo/roblox-dumper\n";
+        comment += " * Created by: LovelaceCoins (dumped by Coins)\n";
         comment += " * Roblox Version: " + version_str + "\n";
         comment += " * Time Taken: " + std::to_string(elapsed_time.count()) + " ms (" +
                    std::to_string(elapsed_time.count() / 1000.0) + " seconds)\n";
@@ -131,8 +130,7 @@ namespace dumper::writer {
         content += "  \"metadata\": {\n";
         content += "    \"dumper\": \"" + std::string(PROJECT_NAME) + " " +
                    std::string(PROJECT_VERSION) + "\",\n";
-        content += "    \"author\": \"Jonah (jonahw on Discord)\",\n";
-        content += "    \"github\": \"https://github.com/nopjo/roblox-dumper\",\n";
+        content += "    \"author\": \"LovelaceCoins (dumped by Coins)\",\n";
         content += "    \"roblox_version\": \"" + version_str + "\",\n";
         content += "    \"total_offsets\": " + std::to_string(get_total_offset_count()) + "\n";
         content += "  },\n";
@@ -200,8 +198,7 @@ namespace dumper::writer {
 
         std::string comment = "# Dumped With: " + std::string(PROJECT_NAME) + " " +
                               std::string(PROJECT_VERSION) + "\n";
-        comment += "# Created by: Jonah (jonahw on Discord)\n";
-        comment += "# Github: https://github.com/nopjo/roblox-dumper\n";
+        comment += "# Created by: LovelaceCoins (dumped by Coins)\n";
         comment += "# Roblox Version: " + version_str + "\n";
         comment += "# Time Taken: " + std::to_string(elapsed_time.count()) + " ms (" +
                    std::to_string(elapsed_time.count() / 1000.0) + " seconds)\n";

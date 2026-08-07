@@ -95,6 +95,22 @@ namespace process::helpers {
         return std::nullopt;
     }
 
+    auto find_content_string(uintptr_t base, const std::string& substring,
+                             size_t max_offset, size_t alignment) -> std::optional<size_t> {
+        for (size_t offset = 0; offset < max_offset; offset += alignment) {
+            auto string_ptr = Memory::read<uintptr_t>(base + offset);
+            if (!string_ptr || *string_ptr < 0x10000) continue;
+
+            auto rstr = Memory::read_roblox_string(*string_ptr);
+            if (rstr && rstr->find(substring) != std::string::npos) return offset;
+
+            auto str = Memory::read_sso_string(*string_ptr);
+            if (str && str->find(substring) != std::string::npos) return offset;
+        }
+
+        return std::nullopt;
+    }
+
     auto find_roblox_string_offset(uintptr_t base_address, const std::string& target_string,
                                    size_t max_offset, size_t alignment)
         -> std::optional<size_t> {

@@ -48,15 +48,17 @@ namespace bridge {
 
     auto Bridge::read_value(const roblox::Instance& instance) -> std::optional<json> {
         const auto value_addr = instance.get_address() + roblox::offsets::Value::Value;
-        const auto str = process::Memory::read_sso_string(value_addr);
+        const auto str = process::Memory::read_roblox_string(value_addr);
 
         if (!str || str->empty()) {
             return std::nullopt;
         }
 
+        spdlog::debug("bridge raw value: {}", str->substr(0, 200));
         try {
             return json::parse(*str);
-        } catch (const json::exception&) {
+        } catch (const json::exception& e) {
+            spdlog::debug("bridge json parse failed: {}", e.what());
             return std::nullopt;
         }
     }

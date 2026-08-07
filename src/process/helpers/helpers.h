@@ -198,6 +198,11 @@ namespace process::helpers {
     auto find_rtti_ptr(uintptr_t base, const std::string& needle,
                        size_t max = 0x1000, size_t align = 8) -> std::optional<size_t>;
 
+    // Content/asset-id strings: Roblox strings pointed to from pointer slots.
+    // Returns the slot offset whose dereferenced string contains `substring`.
+    auto find_content_string(uintptr_t base, const std::string& substring,
+                             size_t max = 0x1000, size_t align = 8) -> std::optional<size_t>;
+
     auto find_cframe(uintptr_t base,
                      size_t max = 0x1000, size_t align = 4) -> std::optional<size_t>;
 

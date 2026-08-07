@@ -86,15 +86,36 @@ namespace dumper {
         threads.emplace_back(safe([]() { stages::task_scheduler::dump(); }, "task_scheduler"));
         threads.emplace_back(safe([]() { stages::script_context::dump(); }, "script_context"));
         threads.emplace_back(safe([]() { stages::vehicle_seat::dump(); }, "vehicle_seat"));
-        // Disabled on this client: value scans matched uninitialized memory instead of
-        // property defaults (no distinctive anchors present in the objects).
-        // threads.emplace_back(safe([]() { stages::sound::dump(); }, "sound"));
-        // threads.emplace_back(safe([]() { stages::depth_of_field::dump(); }, "depth_of_field"));
-        // threads.emplace_back(safe([]() { stages::sun_rays_effect::dump(); }, "sun_rays_effect"));
-        // threads.emplace_back(safe([]() { stages::misc::dump(); }, "misc"));
+        threads.emplace_back(safe([]() { stages::sound::dump(); }, "sound"));
+        threads.emplace_back(safe([]() { stages::depth_of_field::dump(); }, "depth_of_field"));
+        threads.emplace_back(safe([]() { stages::sun_rays_effect::dump(); }, "sun_rays_effect"));
+        threads.emplace_back(safe([]() { stages::misc::dump(); }, "misc"));
         threads.emplace_back(safe([]() { stages::beam::dump(); }, "beam"));
         threads.emplace_back(safe([]() { stages::attachment::dump(); }, "attachment"));
         threads.emplace_back(safe([]() { stages::model::dump(); }, "model"));
+        threads.emplace_back(safe([]() { stages::seat::dump(); }, "seat"));
+        threads.emplace_back(safe([]() { stages::weld::dump(); }, "weld"));
+        threads.emplace_back(safe([]() { stages::weld_constraint::dump(); }, "weld_constraint"));
+        threads.emplace_back(safe([]() { stages::union_operation::dump(); }, "union_operation"));
+        threads.emplace_back(safe([]() { stages::textures::dump(); }, "textures"));
+        threads.emplace_back(safe([]() { stages::surface_appearance::dump(); }, "surface_appearance"));
+        threads.emplace_back(safe([]() { stages::particle_emitter::dump(); }, "particle_emitter"));
+        threads.emplace_back(safe([]() { stages::spawn_location::dump(); }, "spawn_location"));
+        threads.emplace_back(safe([]() { stages::stats_item::dump(); }, "stats_item"));
+        threads.emplace_back(safe([]() { stages::color_correction::dump(); }, "color_correction"));
+        threads.emplace_back(safe([]() { stages::color_grading::dump(); }, "color_grading"));
+        threads.emplace_back(safe([]() { stages::blur_effect::dump(); }, "blur_effect"));
+        threads.emplace_back(safe([]() { stages::click_detector::dump(); }, "click_detector"));
+        threads.emplace_back(safe([]() { stages::animator::dump(); }, "animator"));
+        threads.emplace_back(safe([]() { stages::animation_track::dump(); }, "animation_track"));
+        threads.emplace_back(safe([]() { stages::player_mouse::dump(); }, "player_mouse"));
+        threads.emplace_back(safe([]() { stages::user_input_service::dump(); }, "user_input_service"));
+        threads.emplace_back(safe([]() { stages::air_properties::dump(); }, "air_properties"));
+        // Disabled on this client: descriptor slots never matched, and each target
+        // (MouseHit/MouseLowerHit/Raycast/FindPartOnRayWithIgnoreList) adds a full
+        // memory scan even after restricting it to the module. Re-enable once the
+        // descriptor layout for Sober is confirmed.
+        // threads.emplace_back(safe([]() { stages::descriptors::dump(); }, "descriptors"));
 
         for (auto& thread : threads) {
             thread.join();

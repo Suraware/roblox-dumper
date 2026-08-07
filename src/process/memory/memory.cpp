@@ -3,6 +3,8 @@
 #include <cstring>
 
 namespace process {
+    constexpr size_t k_max_scan_bytes = 0x40000000; // 1 GiB
+
     auto Memory::read_bytes(uintptr_t address, size_t size) -> std::vector<uint8_t> {
         std::vector<uint8_t> buffer;
         try {
@@ -54,7 +56,8 @@ namespace process {
     // Roblox custom string format (used by Instance::Name, ClassName, etc.):
     //   byte 0: (len << 1) | (is_long ? 1 : 0)
     //   if short (!is_long): bytes 1..len contain string data
-    //   if long  (is_long):  bytes 0..7 contain a pointer (LSB masked), data at that pointer
+    //   if long  (is_long):  qword at +8 = length, qword at +0x10 = data pointer
+    //   (the qword at +0 is a size/capacity prefix, not a pointer)
     auto Memory::read_roblox_string(uintptr_t address) -> std::optional<std::string> {
         if (!address) return std::nullopt;
         auto hdr = read<uint8_t>(address);
@@ -62,11 +65,50 @@ namespace process {
         uint8_t len = *hdr >> 1;
         if (len == 0) return std::nullopt;
         if (*hdr & 1) {
-            auto p = read<uintptr_t>(address);
-            if (!p || *p < 0x10000) return std::nullopt;
-            return read_string(*p & ~1ULL, len);
+            auto length = read<uint64_t>(address + 8);
+            auto data_ptr = read<uintptr_t>(address + 0x10);
+            if (!length || !data_ptr || *data_ptr < 0x10000) return std::nullopt;
+            return read_string(*data_ptr, static_cast<size_t>(std::min<uint64_t>(*length, 0x2000)));
         }
         return read_string(address + 1, len);
+    }
+
+    // Scan only the main module's mapped regions (memfd/sober binary), ignoring
+    // the potentially enormous anonymous/reserved mappings that otherwise take
+    // minutes to walk on Sober.
+    auto Memory::scan_string_module(const std::string& target) -> std::vector<uintptr_t> {
+        std::vector<uintptr_t> matches;
+
+        if (target.empty()) {
+            return matches;
+        }
+
+        uintptr_t base = g_process.get_module_base();
+        if (!base) {
+            return matches;
+        }
+
+        for (const auto& region : g_process.get_regions()) {
+            if (!region.readable) continue;
+            if (region.size > k_max_scan_bytes) continue;
+
+            // Only regions that back the main module binary.
+            const bool is_module =
+                region.pathname.find("memfd") != std::string::npos ||
+                (region.start >= base && region.start < base + 0x100000000ULL);
+            if (!is_module) continue;
+
+            auto buffer = read_bytes(region.start, region.size);
+            if (buffer.size() < target.size()) continue;
+
+            for (size_t offset = 0; offset <= buffer.size() - target.size(); offset++) {
+                if (std::memcmp(buffer.data() + offset, target.data(), target.size()) == 0) {
+                    matches.push_back(region.start + offset);
+                }
+            }
+        }
+
+        return matches;
     }
 
     auto Memory::scan_string(const std::string& target, std::string_view section)
@@ -79,8 +121,6 @@ namespace process {
 
         // Guard against enormous regions (Sober exposes huge anonymous mappings)
         // that would throw std::bad_alloc if fully buffered.
-        constexpr size_t k_max_scan_bytes = 0x40000000; // 1 GiB
-
         if (!section.empty()) {
             auto sec = g_process.get_section(section);
             if (!sec) {

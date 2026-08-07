@@ -118,6 +118,8 @@ namespace dumper::stages::lighting {
             g_dumper.add_offset("LightingParameters", "Source", *light_direction_offset + 0xC);
             g_dumper.add_offset("LightingParameters", "TrueSunPosition",
                                 *light_direction_offset + 0x10);
+            g_dumper.add_offset("LightingParameters", "SunPosition",
+                                *light_direction_offset + 0x10);
         } else {
             spdlog::error("Failed to find LightDirection offset in Lighting");
         }
@@ -129,8 +131,20 @@ namespace dumper::stages::lighting {
 
         if (moon_position_offset) {
             g_dumper.add_offset("LightingParameters", "TrueMoonPosition", *moon_position_offset);
+            g_dumper.add_offset("LightingParameters", "MoonPosition", *moon_position_offset);
         } else {
             spdlog::error("Failed to find TrueMoonPosition offset in Lighting");
+        }
+
+        // GlobalShadows: set to false in the calibration place (distinctive byte 0
+        // adjacent to a 1 in the bool region). Best-effort heuristic.
+        for (size_t off = 0x2C0; off < 0x460; ++off) {
+            auto v = process::Memory::read<uint8_t>(dumper::g_lighting->get_address() + off);
+            auto nx = process::Memory::read<uint8_t>(dumper::g_lighting->get_address() + off + 1);
+            if (v && nx && (*v == 0 || *v == 1) && (*nx == 0 || *nx == 1) && *v != *nx) {
+                g_dumper.add_offset("Lighting", "GlobalShadows", off);
+                break;
+            }
         }
 
         const auto geo_latitude_offset =

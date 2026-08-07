@@ -7,3 +7,6 @@ offsets.h
 offsets.json
 offsets.py
 offsets.cs
+
+docs/node_modules
+node_modules

@@ -54,6 +54,14 @@ namespace dumper::stages::base_part {
             return false;
         }
 
+        for (size_t pi = 0; pi < std::min<size_t>(3, prim_addrs.size()); pi++) {
+            for (size_t off = 0; off < 0x260; off += 4) {
+                auto u = process::Memory::read<uint32_t>(prim_addrs[pi] + off);
+                auto f = process::Memory::read<float>(prim_addrs[pi] + off);
+                if (u) spdlog::info("[dbg prim] p{} +0x{:X} u32=0x{:08X} f={}", pi, off, *u, f ? *f : 0.0f);
+            }
+        }
+
         // CFrame/Position via identity matrix scan
         auto cf = process::helpers::find_cframe(prim_addrs[0], 0x400, 4);
         if (cf) {
@@ -63,15 +71,120 @@ namespace dumper::stages::base_part {
             dumper::g_dumper.add_offset("Primitive", "Orientation", *cf);
         }
 
-        // Size = vec3 (0.01, 100) near 0x1B8 (reference window)
-        auto sz = process::helpers::find_vec3_pred(prim_addrs[0] + 0x1B0, [](const std::array<float,3>& v) {
-            return v[0] > 0.01f && v[0] < 100.0f && v[1] > 0.01f && v[1] < 100.0f && v[2] > 0.01f && v[2] < 100.0f;
-        }, 0x20, 4);
-        if (sz) dumper::g_dumper.add_offset("Primitive", "Size", 0x1B0 + *sz);
+        // Anchor data from bridge: name -> part props (size/color/transparency/can_collide)
+        auto parts_info = bridge::g_bridge.read_parts_information();
+        std::map<std::string, const bridge::PartProperty*> part_props;
+        if (parts_info) {
+            for (const auto& p : parts_info->parts) part_props[p.name] = &p;
+            spdlog::info("[dbg part] bridge has {} part props", parts_info->parts.size());
+            for (const auto& p : parts_info->parts)
+                spdlog::info("[dbg part] '{}' size=({},{},{}) color=({},{},{}) trans={} collide={}",
+                             p.name, p.size_x, p.size_y, p.size_z,
+                             p.color_r, p.color_g, p.color_b, p.transparency, p.can_collide);
+        }
 
-        // Transparency = float [0,1] near 0x44 (reference window)
-        auto trans = process::helpers::find_float_range(prim_addrs[0] + 0x38, 0.0f, 1.0f, 0x18, 4);
-        if (trans) dumper::g_dumper.add_offset("Primitive", "Transparency", 0x38 + *trans);
+        std::vector<const bridge::PartProperty*> props_for_prim;
+        for (auto& p : parts_insts) {
+            auto nm = p.get_name();
+            const bridge::PartProperty* pr = nullptr;
+            if (nm && part_props.count(*nm)) pr = part_props.at(*nm);
+            props_for_prim.push_back(pr);
+        }
+
+        // Size = bridge size vec3 on each matched primitive
+        {
+            size_t best = 0, best_matches = 0;
+            for (size_t off = 0; off < 0x300; off += 4) {
+                size_t matches = 0;
+                for (size_t i = 0; i < prim_addrs.size(); i++) {
+                    if (!props_for_prim[i]) continue;
+                    auto s = process::Memory::read<float>(prim_addrs[i] + off);
+                    auto s2 = process::Memory::read<float>(prim_addrs[i] + off + 4);
+                    auto s3 = process::Memory::read<float>(prim_addrs[i] + off + 8);
+                    if (s && s2 && s3 &&
+                        std::abs(*s - props_for_prim[i]->size_x) < 0.01f &&
+                        std::abs(*s2 - props_for_prim[i]->size_y) < 0.01f &&
+                        std::abs(*s3 - props_for_prim[i]->size_z) < 0.01f)
+                        matches++;
+                }
+                if (matches > best_matches) { best_matches = matches; best = off; }
+            }
+            if (best_matches >= 1)
+                spdlog::info("[dbg part] size best offset 0x{:X} matches {}/{}", best, best_matches, prim_addrs.size());
+            if (best_matches >= 2 || (best_matches == 1 && prim_addrs.size() == 1))
+                dumper::g_dumper.add_offset("Primitive", "Size", best);
+        }
+
+        // Flags: u32 where bit0 == can_collide across matched parts (calibration varies it)
+        {
+            for (size_t off = 0; off < 0x300; off += 4) {
+                int ok_true = 0, ok_false = 0;
+                bool good = true;
+                uint32_t first = 0;
+                bool have_collide_false = false, have_collide_true = false;
+                for (size_t i = 0; i < prim_addrs.size(); i++) {
+                    if (!props_for_prim[i]) continue;
+                    auto v = process::Memory::read<uint32_t>(prim_addrs[i] + off);
+                    if (!v) { good = false; break; }
+                    if (props_for_prim[i]->can_collide) {
+                        have_collide_true = true;
+                        if (*v & 1u) ok_true++;
+                    } else {
+                        have_collide_false = true;
+                        if ((*v & 1u) == 0) ok_false++;
+                    }
+                    if (first == 0) first = *v;
+                }
+                if (good && have_collide_true && have_collide_false && ok_true + ok_false >= 2) {
+                    spdlog::info("[dbg part] flags candidate 0x{:X}: collide-true bit set {}x, false clear {}x", off, ok_true, ok_false);
+                    if (ok_true >= 1 && ok_false >= 1) {
+                        dumper::g_dumper.add_offset("Primitive", "Flags", off);
+                        dumper::g_dumper.add_offset("Primitive", "PrimitiveFlags", off);
+                        dumper::g_dumper.add_offset("PrimitiveFlags", "CanCollide", 1);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Transparency = bridge transparency float on first matched prim
+        {
+            for (size_t i = 0; i < prim_addrs.size(); i++) {
+                if (!props_for_prim[i]) continue;
+                auto t = process::helpers::find_offset<float>(prim_addrs[i], props_for_prim[i]->transparency, 0x300, 0x4);
+                if (t) {
+                    spdlog::info("[dbg part] transparency at 0x{:X} (val {})", *t, props_for_prim[i]->transparency);
+                    dumper::g_dumper.add_offset("Primitive", "Transparency", *t);
+                }
+                break;
+            }
+        }
+
+        // BasePart fields: scan on part addresses
+        std::vector<uintptr_t> part_addrs;
+        for (auto& p : parts_insts) part_addrs.push_back(p.get_address());
+
+        // Color3 = 3 bytes (r,g,b) matching bridge color, shared across parts
+        {
+            size_t best = 0, best_matches = 0;
+            for (size_t off = 0; off < 0x400; off++) {
+                size_t matches = 0;
+                for (size_t i = 0; i < part_addrs.size(); i++) {
+                    if (!props_for_prim[i]) continue;
+                    auto r = process::Memory::read<uint8_t>(part_addrs[i] + off);
+                    auto g = process::Memory::read<uint8_t>(part_addrs[i] + off + 1);
+                    auto b = process::Memory::read<uint8_t>(part_addrs[i] + off + 2);
+                    if (r && g && b && *r == props_for_prim[i]->color_r &&
+                        *g == props_for_prim[i]->color_g && *b == props_for_prim[i]->color_b)
+                        matches++;
+                }
+                if (matches > best_matches) { best_matches = matches; best = off; }
+            }
+            if (best_matches >= 2)
+                spdlog::info("[dbg part] color best offset 0x{:X} matches {}/{}", best, best_matches, part_addrs.size());
+            if (best_matches >= 2 || (best_matches == 1 && part_addrs.size() == 1))
+                dumper::g_dumper.add_offset("BasePart", "Color3", best);
+        }
 
         // Assembly velocities near 0x1B0 (reference window)
         auto alv = process::helpers::find_vec3_pred(
@@ -86,40 +199,15 @@ namespace dumper::stages::base_part {
             dumper::g_dumper.add_offset("Primitive", "AssemblyAngularVelocity", off + 0xC);
         }
 
-        // PrimitiveFlags
-        for (size_t off = 0; off < 0x300; off += 1) {
-            bool ok = true, varied = false;
-            uint8_t first = 0;
-            for (size_t i = 0; i < prim_addrs.size(); i++) {
-                auto v = process::Memory::read<uint8_t>(prim_addrs[i] + off);
-                if (!v) { ok = false; break; }
-                if (i == 0) first = *v;
-                else if (*v != first) varied = true;
-            }
-            if (ok && varied) {
-                dumper::g_dumper.add_offset("Primitive", "PrimitiveFlags", off);
-                break;
-            }
-        }
+        // PrimitiveFlags -- replaced by exact Flags/CanCollide above
 
         // BasePart fields: scan on part addresses
-        std::vector<uintptr_t> part_addrs;
-        for (auto& p : parts_insts) part_addrs.push_back(p.get_address());
 
         // Size on BasePart too (some games use this)
         auto bp_sz = process::helpers::find_vec3_pred(part_addrs[0], [](const std::array<float,3>& v) {
             return v[0] > 0.01f && v[0] < 100.0f && v[1] > 0.01f && v[1] < 100.0f && v[2] > 0.01f && v[2] < 100.0f;
         }, 0x400, 4);
         if (bp_sz) dumper::g_dumper.add_offset("BasePart", "Size", *bp_sz);
-
-        // Color3 = vec3 with equal components (gray) in [0.1, 1], near 0x194
-        auto col3 = process::helpers::find_vec3_pred(
-            part_addrs[0] + 0x180, [](const std::array<float, 3>& v) {
-                return v[0] > 0.1f && v[0] <= 1.0f && std::abs(v[0] - v[1]) < 0.01f &&
-                       std::abs(v[1] - v[2]) < 0.01f;
-            },
-            0x40, 4);
-        if (col3) dumper::g_dumper.add_offset("BasePart", "Color3", 0x180 + *col3);
 
         // Transparency = float [0,1] near 0x164
         auto bpt = process::helpers::find_float_range(part_addrs[0] + 0x150, 0.0f, 1.0f, 0x30, 4);

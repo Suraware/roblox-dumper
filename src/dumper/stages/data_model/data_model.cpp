@@ -49,8 +49,8 @@ namespace dumper::stages::data_model {
         dumper::g_dumper.add_offset("DataModel", "Workspace", *workspace_offset);
 
         // Internal-use singleton slots (RTTI-validated pointer members).
-        const auto script_context =
-            process::Rtti::find(dumper::g_data_model_addr, "ScriptContext@RBX");
+        const auto script_context = process::Rtti::find(
+            dumper::g_data_model_addr, "ScriptContext@RBX", 0x4000);
         if (script_context)
             dumper::g_dumper.add_offset("DataModel", "ScriptContext", *script_context, "",
                                         FieldType::Pointer);

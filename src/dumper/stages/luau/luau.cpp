@@ -10,8 +10,8 @@
 //   a1[5]  (+0x28)  stack base
 //   slot math: (top - stack) >> 4  => sizeof(TValue) == 16
 //
-// The prologue also loads a module-global pointer (mov r15,[rip+...]) which is
-// emitted as Luau::GlobalStatePointer - the in-process entry point to the VM.
+// The prologue also loads a module-global pointer (mov r15,[rip+...]); its
+target is emitted as Luau::VmAuxStruct - purpose not yet fully identified.
 #include "luau.h"
 #include "dumper/dumper.h"
 #include "process/memory/memory.h"
@@ -207,6 +207,29 @@ namespace dumper::stages::luau {
                                      FieldType::Pointer);
         g_dumper.add_internal_offset("global_State", "TmNames", 1088, "",
                                      FieldType::Pointer);
+
+        // GC control/state (from lua_gc switch + luaC_fullgc):
+        g_dumper.add_internal_offset("global_State", "GCGoal", 56, "",
+                                     FieldType::UInt32);
+        g_dumper.add_internal_offset("global_State", "GCStepMul", 60, "",
+                                     FieldType::UInt32);
+        g_dumper.add_internal_offset("global_State", "GCMulParam", 64, "",
+                                     FieldType::UInt32);
+        g_dumper.add_internal_offset("global_State", "GCPaused", 72, "",
+                                     FieldType::UInt64);
+        g_dumper.add_internal_offset("global_State", "TotalBytes", 80, "",
+                                     FieldType::UInt64);
+        g_dumper.add_internal_offset("global_State", "GCRunning", 89, "",
+                                     FieldType::Bool);
+
+        // External-getgc enumeration entry: circular page list.
+        //   head = *(global + 0x300); next page = *(page + 0x18);
+        //   end when next == head. Mark byte at page + 3.
+        g_dumper.add_internal_offset("global_State", "GCPageListHead", 0x300, "",
+                                     FieldType::Pointer);
+        g_dumper.add_internal_offset("GCoPage", "Next", 0x18, "",
+                                     FieldType::Pointer);
+        g_dumper.add_internal_offset("GCoPage", "Mark", 0x3, "", FieldType::UInt8);
 
         // TValue: value union at +0, type tag (dword) at +0xC;
         // sizeof(TValue) == 16 ((top - stack) >> 4 in checkstack).

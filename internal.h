@@ -2,7 +2,7 @@
  * INTERNAL OFFSETS - in-process use only
  * Dumped With: roblox-dumper 3.0
  * Roblox Version: 199da195b4fd47
- * Time Taken: 1372 ms
+ * Time Taken: 1249 ms
  */
 
 #pragma once
@@ -10,9 +10,21 @@
 
 // clang-format off
 namespace internal {
+    namespace GCoPage {
+        inline constexpr uintptr_t Mark = 0x3;
+        inline constexpr uintptr_t Next = 0x18;
+    }
+
     namespace global_State {
+        inline constexpr uintptr_t GCGoal = 0x38;
+        inline constexpr uintptr_t GCMulParam = 0x40;
+        inline constexpr uintptr_t GCPageListHead = 0x300;
+        inline constexpr uintptr_t GCPaused = 0x48;
+        inline constexpr uintptr_t GCRunning = 0x59;
+        inline constexpr uintptr_t GCStepMul = 0x3C;
         inline constexpr uintptr_t TmCache = 0x328;
         inline constexpr uintptr_t TmNames = 0x440;
+        inline constexpr uintptr_t TotalBytes = 0x50;
     }
 
     namespace TValue {

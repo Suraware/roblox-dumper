@@ -398,8 +398,11 @@ namespace process {
 
     auto Process::get_section(std::string_view section_name) const
         -> std::optional<std::pair<uintptr_t, size_t>> {
-        // First try ELF section headers
-        auto elf_result = get_elf_section(section_name);
+        // First try ELF section headers. PE-style ".rdata" maps to ".rodata"
+        // on ELF (Sober's libroblox.so).
+        std::string resolved_section(section_name);
+        if (resolved_section == ".rdata") resolved_section = ".rodata";
+        auto elf_result = get_elf_section(resolved_section);
         if (elf_result) {
             return elf_result;
         }

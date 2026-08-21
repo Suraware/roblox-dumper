@@ -123,25 +123,37 @@ namespace process {
         // that would throw std::bad_alloc if fully buffered.
         if (!section.empty()) {
             auto sec = g_process.get_section(section);
-            if (!sec) {
-                return matches;
-            }
-
-            if (sec->second > k_max_scan_bytes) {
-                return matches;
-            }
-
-            auto buffer = read_bytes(sec->first, sec->second);
-            if (buffer.size() < target.size()) {
-                return matches;
-            }
-
-            for (size_t offset = 0; offset <= buffer.size() - target.size(); offset++) {
-                if (std::memcmp(buffer.data() + offset, target.data(), target.size()) == 0) {
-                    matches.push_back(sec->first + offset);
+            // Sober: a failed/oversized section lookup falls back to scanning
+            // every memfd-backed region instead of returning nothing.
+            if (sec && sec->second <= k_max_scan_bytes) {
+                auto buffer = read_bytes(sec->first, sec->second);
+                if (buffer.size() >= target.size()) {
+                    for (size_t offset = 0; offset <= buffer.size() - target.size(); offset++) {
+                        if (std::memcmp(buffer.data() + offset, target.data(), target.size()) == 0) {
+                            matches.push_back(sec->first + offset);
+                        }
+                    }
+                }
+                if (!matches.empty()) {
+                    return matches;
                 }
             }
 
+            // Module-wide fallback across all libroblox copies.
+            for (const auto& region : g_process.get_regions()) {
+                if (!region.readable || region.executable) continue;
+                if (region.pathname.find("memfd") == std::string::npos) continue;
+                if (region.size > k_max_scan_bytes) continue;
+
+                auto buffer = read_bytes(region.start, region.size);
+                if (buffer.size() < target.size()) continue;
+
+                for (size_t offset = 0; offset <= buffer.size() - target.size(); offset++) {
+                    if (std::memcmp(buffer.data() + offset, target.data(), target.size()) == 0) {
+                        matches.push_back(region.start + offset);
+                    }
+                }
+            }
             return matches;
         }
 

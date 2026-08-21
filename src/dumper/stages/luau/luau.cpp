@@ -65,6 +65,41 @@ namespace dumper::stages::luau {
 
     } // namespace
 
+
+    // IDA-derived function RVAs for build 199da195b4fd47 (prologues embedded
+    // as validation signatures - if the client updates, these fail cleanly).
+    struct InternalFunc {
+        const char* name;
+        size_t rva;
+        uint8_t prologue[8];
+        size_t prologue_len;
+    };
+
+    auto dump_internal_functions() -> bool {
+        const InternalFunc funcs[] = {
+            {"InstanceNew",          0x26F7744, {0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56}, 8},
+            {"InstanceCreateCore",   0x2409CCE, {0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56}, 8},
+            {"ClassNameToDescriptor",0x2187550, {0x55, 0x48, 0x89, 0xE5, 0x53, 0x50, 0x48, 0x89}, 8},
+            {"LuaDCall",             0x26DFAB4, {0x55, 0x48, 0x89, 0xE5, 0x41, 0x57, 0x41, 0x56}, 8},
+            {"LuaResume",            0x65A4DA0, {0x55, 0x48, 0x89, 0xE5, 0x0F, 0xB6, 0x47, 0x03}, 8},
+        };
+
+        bool ok = true;
+        for (const auto& fn : funcs) {
+            const uintptr_t addr = process::g_process.get_module_base() + fn.rva;
+            auto bytes = process::Memory::read_bytes(addr, fn.prologue_len);
+            if (bytes.size() != fn.prologue_len ||
+                std::memcmp(bytes.data(), fn.prologue, fn.prologue_len) != 0) {
+                spdlog::warn("luau: {} prologue mismatch - skipping", fn.name);
+                ok = false;
+                continue;
+            }
+            g_dumper.add_internal_offset("Functions", fn.name, fn.rva, "",
+                                         FieldType::Pointer);
+        }
+        return ok;
+    }
+
     auto dump() -> bool {
         const auto pattern = make_pattern();
         const auto module_base = process::g_process.get_module_base();
@@ -238,6 +273,8 @@ namespace dumper::stages::luau {
 
         spdlog::info("Luau: luaD_checkstack at RVA 0x{:X}, global ptr slot 0x{:X}",
                      check_rva, global_ptr_rva);
+
+        dump_internal_functions();
         return true;
     }
 

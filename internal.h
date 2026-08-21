@@ -2,7 +2,7 @@
  * INTERNAL OFFSETS - in-process use only
  * Dumped With: roblox-dumper 3.0
  * Roblox Version: 199da195b4fd47
- * Time Taken: 1249 ms
+ * Time Taken: 1774 ms
  */
 
 #pragma once
@@ -13,6 +13,14 @@ namespace internal {
     namespace GCoPage {
         inline constexpr uintptr_t Mark = 0x3;
         inline constexpr uintptr_t Next = 0x18;
+    }
+
+    namespace Functions {
+        inline constexpr uintptr_t ClassNameToDescriptor = 0x2187550;
+        inline constexpr uintptr_t InstanceCreateCore = 0x2409CCE;
+        inline constexpr uintptr_t InstanceNew = 0x26F7744;
+        inline constexpr uintptr_t LuaDCall = 0x26DFAB4;
+        inline constexpr uintptr_t LuaResume = 0x65A4DA0;
     }
 
     namespace global_State {

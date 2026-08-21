@@ -24,7 +24,6 @@
 #include "stages/lighting/lighting.h"
 #include "stages/mesh_part/mesh_part.h"
 #include "stages/misc/misc.h"
-#include "stages/model/model.h"
 #include "stages/mouse_service/mouse_service.h"
 #include "stages/particle_emitter/particle_emitter.h"
 #include "stages/player/player.h"

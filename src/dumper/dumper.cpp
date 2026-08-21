@@ -1,6 +1,9 @@
 #include "dumper.h"
 #include "bridge/bridge.h"
 #include "process/memory/memory.h"
+#include "stages/player/player.h"
+#include "stages/property_descriptors/property_descriptors.h"
+#include "stages/registry.h"
 #include "stages/stages.h"
 #include <cstring>
 #include <fstream>
@@ -50,6 +53,10 @@ namespace dumper {
         g_lighting = g_data_model.find_first_child_of_class("Lighting");
         g_workspace = g_data_model.find_first_child_of_class("Workspace");
 
+        if (!stages::property_descriptors::dump()) {
+            spdlog::warn("PropertyDescriptors stage failed (non-critical)");
+        }
+
         stages::team::dump();
 
         auto safe = [](auto fn, std::string name) {
@@ -92,7 +99,6 @@ namespace dumper {
         threads.emplace_back(safe([]() { stages::misc::dump(); }, "misc"));
         threads.emplace_back(safe([]() { stages::beam::dump(); }, "beam"));
         threads.emplace_back(safe([]() { stages::attachment::dump(); }, "attachment"));
-        threads.emplace_back(safe([]() { stages::model::dump(); }, "model"));
         threads.emplace_back(safe([]() { stages::seat::dump(); }, "seat"));
         threads.emplace_back(safe([]() { stages::weld::dump(); }, "weld"));
         threads.emplace_back(safe([]() { stages::weld_constraint::dump(); }, "weld_constraint"));
@@ -111,13 +117,19 @@ namespace dumper {
         threads.emplace_back(safe([]() { stages::player_mouse::dump(); }, "player_mouse"));
         threads.emplace_back(safe([]() { stages::user_input_service::dump(); }, "user_input_service"));
         threads.emplace_back(safe([]() { stages::air_properties::dump(); }, "air_properties"));
-        // Disabled on this client: descriptor slots never matched, and each target
-        // (MouseHit/MouseLowerHit/Raycast/FindPartOnRayWithIgnoreList) adds a full
-        // memory scan even after restricting it to the module. Re-enable once the
-        // descriptor layout for Sober is confirmed.
-        // threads.emplace_back(safe([]() { stages::descriptors::dump(); }, "descriptors"));
+        // Descriptor acquisition (charm method, adapted to this client's
+        // interned-Name layout). Runs synchronously: it is scan-heavy.
+        stages::descriptors::dump();
 
-        for (auto& thread : threads) {
+                for (const auto& stage : stages::g_stage_registry) {
+            threads.emplace_back([&stage]() {
+                if (!stage.dump()) {
+                    spdlog::error("Failed to dump {}", stage.name);
+                }
+            });
+        }
+
+for (auto& thread : threads) {
             thread.join();
         }
 
@@ -125,10 +137,22 @@ namespace dumper {
     }
 
     auto Dumper::add_offset(const std::string& namespace_name, const std::string& offset_name,
-                            size_t offset) -> void {
+                        size_t offset, const std::string& comment, FieldType type) -> void {
         std::lock_guard<std::mutex> lock(m_offset_mutex);
-        m_offsets[namespace_name].push_back({offset_name, offset});
+        m_offsets[namespace_name].push_back({offset_name, offset, comment, type});
         spdlog::info("Added offset: {}::{} = 0x{:X}", namespace_name, offset_name, offset);
+    }
+
+auto Dumper::add_enum(const std::string& enum_name, const std::string& entry_name, int value)
+        -> void {
+        std::lock_guard<std::mutex> lock(m_offset_mutex);
+        m_enums[enum_name].push_back({entry_name, value});
+    }
+
+    auto Dumper::set_namespace_comment(const std::string& namespace_name,
+                                       const std::string& comment) -> void {
+        std::lock_guard<std::mutex> lock(m_offset_mutex);
+        m_namespace_comments[namespace_name] = comment;
     }
 
     auto Dumper::get_offset(const std::string& namespace_name, const std::string& offset_name) const

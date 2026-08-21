@@ -24,7 +24,13 @@ namespace process::helpers {
                                 bool direct = false) -> std::optional<size_t>;
 
     auto find_roblox_string_offset(uintptr_t base_address, const std::string& target_string,
-                                   size_t max_offset = 0x1000, size_t alignment = 8)
+                                   size_t max_offset = 0x1000, size_t alignment = 8,
+                                   bool direct = false) -> std::optional<size_t>;
+
+    // Current-build Instance::Name storage: base+off holds a flyweight handle whose
+    // record embeds a libc++ string at +8. Returns the SLOT offset on match.
+    auto find_flyweight_string_offset(uintptr_t base_address, const std::string& target_string,
+                                      size_t max_offset = 0x1000, size_t alignment = 8)
         -> std::optional<size_t>;
 
     auto find_string_offset(uintptr_t base_address, const std::string& target_string,
@@ -50,6 +56,7 @@ namespace process::helpers {
                      size_t alignment = 8) -> std::optional<size_t> {
         for (size_t offset = 0; offset < max_offset; offset += alignment) {
             auto read_value = Memory::read<T>(base_address + offset);
+
             if (read_value && read_value.value() == value) {
                 return offset;
             }
@@ -176,6 +183,14 @@ namespace process::helpers {
     }
 
     // -----------------------------------------------------------------------
+    auto find_sso_string_offset_in_pointer(uintptr_t base_address,
+                                           const std::string& target_string,
+                                           size_t max_pointer_offset = 0x1000,
+                                           size_t max_string_offset = 0x1000,
+                                           size_t pointer_alignment = 8,
+                                           size_t string_alignment = 8)
+        -> std::optional<std::pair<size_t, size_t>>;
+
     // Range-based heuristic helpers (no bridge needed)
     // -----------------------------------------------------------------------
 
@@ -226,6 +241,54 @@ namespace process::helpers {
         }
 
         return std::nullopt;
+    }
+
+
+    inline auto find_function_start(uintptr_t addr) -> std::optional<uintptr_t> {
+        constexpr size_t search_size = 0x1000;
+        uintptr_t region_start = addr - search_size;
+        auto buffer = Memory::read_bytes(region_start, search_size);
+        if (buffer.empty())
+            return std::nullopt;
+
+        for (size_t i = buffer.size() - 1; i > 1; i--) {
+            if (buffer[i] == 0xCC && buffer[i - 1] == 0xCC) {
+                while (i < buffer.size() && buffer[i] == 0xCC)
+                    i++;
+                return region_start + i;
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    inline auto estimate_function_size(uintptr_t func_addr, size_t max_scan = 0x2000) -> size_t {
+        auto buffer = Memory::read_bytes(func_addr, max_scan);
+        if (buffer.empty())
+            return 0;
+
+        for (size_t i = 1; i < buffer.size(); i++) {
+            if (buffer[i] == 0xCC && buffer[i - 1] == 0xCC)
+                return i - 1;
+        }
+
+        return max_scan;
+    }
+
+    inline auto function_is_at_least(uintptr_t func_addr, size_t min_size) -> bool {
+        auto buffer = Memory::read_bytes(func_addr, min_size);
+        if (buffer.size() < min_size)
+            return false;
+
+        for (size_t i = 1; i < buffer.size(); i++) {
+            if (buffer[i] == 0xCC && buffer[i - 1] == 0xCC)
+                return false;
+        }
+        return true;
+    }
+
+    inline auto is_in_section(uintptr_t ptr, const std::pair<uintptr_t, size_t>& section) -> bool {
+        return ptr >= section.first && ptr < section.first + section.second;
     }
 
 } // namespace process::helpers

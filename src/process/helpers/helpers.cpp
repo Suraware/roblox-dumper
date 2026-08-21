@@ -95,6 +95,18 @@ namespace process::helpers {
         return std::nullopt;
     }
 
+    auto find_flyweight_string_offset(uintptr_t base_address, const std::string& target_string,
+                                      size_t max_offset, size_t alignment)
+        -> std::optional<size_t> {
+        for (size_t offset = 0; offset < max_offset; offset += alignment) {
+            auto record = Memory::read<uintptr_t>(base_address + offset);
+            if (!record || *record < 0x10000 || *record > 0x7fffffffffffULL) continue;
+            auto str = Memory::read_roblox_string(*record + 8);
+            if (str && *str == target_string) return offset;
+        }
+        return std::nullopt;
+    }
+
     auto find_content_string(uintptr_t base, const std::string& substring,
                              size_t max_offset, size_t alignment) -> std::optional<size_t> {
         for (size_t offset = 0; offset < max_offset; offset += alignment) {
@@ -112,9 +124,17 @@ namespace process::helpers {
     }
 
     auto find_roblox_string_offset(uintptr_t base_address, const std::string& target_string,
-                                   size_t max_offset, size_t alignment)
+                                   size_t max_offset, size_t alignment, bool direct)
         -> std::optional<size_t> {
         for (size_t offset = 0; offset < max_offset; offset += alignment) {
+            if (direct) {
+                // Inline string object (e.g. Instance::Name at this+0x60 in current builds).
+                auto str = Memory::read_roblox_string(base_address + offset);
+                if (str && *str == target_string) return offset;
+                auto sso = Memory::read_sso_string(base_address + offset);
+                if (sso && *sso == target_string) return offset;
+                continue;
+            }
             auto string_ptr = Memory::read<uintptr_t>(base_address + offset);
             if (!string_ptr || *string_ptr < 0x10000) continue;
             auto str = Memory::read_roblox_string(*string_ptr);
@@ -355,6 +375,40 @@ namespace process::helpers {
             }
             if (ok) return off;
         }
+        return std::nullopt;
+    }
+
+
+
+
+
+
+    auto find_sso_string_offset_in_pointer(uintptr_t base_address, const std::string& target_string,
+                                           size_t max_pointer_offset, size_t max_string_offset,
+                                           size_t pointer_alignment, size_t string_alignment)
+        -> std::optional<std::pair<size_t, size_t>> {
+        for (size_t pointer_offset = 0; pointer_offset < max_pointer_offset;
+             pointer_offset += pointer_alignment) {
+            auto ptr = Memory::read<uintptr_t>(base_address + pointer_offset);
+
+            if (!ptr || *ptr < 0x10000) {
+                continue;
+            }
+
+            for (size_t string_offset = 0; string_offset < max_string_offset;
+                 string_offset += string_alignment) {
+                // Sober/Linux: libc++ strings; Windows: libstdc++ SSO.
+                auto str = Memory::read_roblox_string(*ptr + string_offset);
+                if (str && *str == target_string) {
+                    return std::make_pair(pointer_offset, string_offset);
+                }
+                str = Memory::read_sso_string(*ptr + string_offset);
+                if (str && *str == target_string) {
+                    return std::make_pair(pointer_offset, string_offset);
+                }
+            }
+        }
+
         return std::nullopt;
     }
 

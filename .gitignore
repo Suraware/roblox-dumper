@@ -10,3 +10,9 @@ offsets.cs
 
 docs/node_modules
 node_modules
+structs.h
+structs.json
+src_snapshot_*/
+src_v3_linux_backup/
+*.log
+.cache/

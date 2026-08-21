@@ -7,6 +7,7 @@
 #include "process/rtti/rtti.h"
 #include "roblox/instance/instance.h"
 #include <spdlog/spdlog.h>
+#include <unordered_set>
 
 namespace dumper::stages::player {
     auto dump() -> bool {
@@ -16,7 +17,23 @@ namespace dumper::stages::player {
             return false;
         }
 
-        const auto local_player = process::Rtti::find(players->get_address(), "Player@RBX");
+        // LocalPlayer: several slots may hold Player@RBX-typed pointers; the real
+        // LocalPlayer is the one whose target is a direct child of Players.
+        std::unordered_set<uintptr_t> player_child_addrs;
+        for (const auto& c : players->get_children()) {
+            player_child_addrs.insert(c.get_address());
+        }
+
+        auto local_player = std::optional<size_t>{};
+        for (const auto off :
+             process::Rtti::find_all(players->get_address(), "Player@RBX", 0x400, 8)) {
+            const auto p =
+                process::Memory::read<uintptr_t>(players->get_address() + off);
+            if (p && player_child_addrs.contains(*p)) {
+                local_player = off;
+                break;
+            }
+        }
         if (!local_player) {
             spdlog::error("Failed to find LocalPlayer in Players");
             return false;
@@ -31,12 +48,6 @@ namespace dumper::stages::player {
             return false;
         }
         auto lp = *local_player_addr;
-
-        for (size_t off = 0; off < 0x300; off += 4) {
-            auto u = process::Memory::read<uint32_t>(lp + off);
-            auto f = process::Memory::read<float>(lp + off);
-            if (u) spdlog::info("[dbg lp] +0x{:X} u32=0x{:08X} f={}", off, *u, f ? *f : 0.0f);
-        }
 
         // Character = RTTI - no bridge needed
         const auto character = process::Rtti::find(lp, "ModelInstance@RBX");

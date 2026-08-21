@@ -451,6 +451,14 @@ namespace process {
     auto Process::get_version() const -> std::optional<std::string> {
         if (!m_pid) return std::nullopt;
 
+        // Memoize: the scan is expensive (~3.5s) and each of the four writers
+        // used to repeat it. The hash never changes for a running process.
+        static std::optional<std::string> cached;
+        static bool attempted = false;
+        if (attempted) return cached;
+        attempted = true;
+        cached = [this]() -> std::optional<std::string> {
+
         // Dynamically find the Roblox build hash in the target's memory.
         // The full 40-char build hash (e.g. 199da195b4fd47471fbb2e6009b233e1f5430cd7)
         // sits in the client's .rodata right after the "Setting Roblox cookies" log
@@ -502,6 +510,8 @@ namespace process {
 
         spdlog::warn("Build hash not found in memory, using fallback {}", k_fallback);
         return k_fallback;
+        }();
+        return cached;
     }
 
 } // namespace process

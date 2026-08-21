@@ -32,6 +32,7 @@ namespace bridge {
         m_proximity_prompts_information = find("ProximityPromptsInformation");
         m_text_labels_information = find("TextLabelsInformation");
         m_text_buttons_information = find("TextButtonsInformation");
+        m_highlights_information = find("HighlightsInformation");
 
         const bool ok = m_game_information && m_player_information && m_parts_information &&
                         m_humanoid_information && m_camera_information &&
@@ -139,6 +140,12 @@ namespace bridge {
         if (!m_text_buttons_information) return std::nullopt;
         return read_as<TextButtonPropertiesInfo>(*m_text_buttons_information,
                                                  "TextButtonsInformation");
+    }
+
+    auto Bridge::read_highlights_information() -> std::optional<HighlightPropertiesInfo> {
+        if (!m_highlights_information) return std::nullopt;
+        return read_as<HighlightPropertiesInfo>(*m_highlights_information,
+                                                "HighlightsInformation");
     }
 
 } // namespace bridge

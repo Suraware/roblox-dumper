@@ -48,6 +48,9 @@ namespace roblox {
             return std::nullopt;
         }
 
+        auto get_function_address(std::string_view func_name) const
+            -> std::optional<uintptr_t>;
+
         auto get_address() const -> std::uint64_t;
 
       private:

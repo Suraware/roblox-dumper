@@ -68,8 +68,12 @@ namespace dumper::stages::character_mesh {
 
         const auto base_texture_str =
             std::format("rbxassetid://{}", (*meshes)[0].props.base_texture_id);
-        const auto base_texture_offset = process::helpers::find_sso_string_offset(
+        auto base_texture_offset = process::helpers::find_sso_string_offset(
             mesh_addrs[0], base_texture_str, 0x500, 0x8, true);
+        if (!base_texture_offset) {
+            base_texture_offset = process::helpers::find_sso_string_offset(
+                mesh_addrs[0], base_texture_str, 0x500, 0x8, false);
+        }
         if (!base_texture_offset) {
             spdlog::error("Failed to find BaseTextureId offset");
             return false;
@@ -77,8 +81,12 @@ namespace dumper::stages::character_mesh {
         dumper::g_dumper.add_offset("CharacterMesh", "BaseTextureId", *base_texture_offset);
 
         const auto mesh_id_str = std::format("rbxassetid://{}", (*meshes)[0].props.mesh_id);
-        const auto mesh_id_offset =
+        auto mesh_id_offset =
             process::helpers::find_sso_string_offset(mesh_addrs[0], mesh_id_str, 0x500, 0x8, true);
+        if (!mesh_id_offset) {
+            mesh_id_offset =
+                process::helpers::find_sso_string_offset(mesh_addrs[0], mesh_id_str, 0x500, 0x8, false);
+        }
         if (!mesh_id_offset) {
             spdlog::error("Failed to find MeshId offset");
             return false;
@@ -87,8 +95,12 @@ namespace dumper::stages::character_mesh {
 
         const auto overlay_texture_str =
             std::format("rbxassetid://{}", (*meshes)[0].props.overlay_texture_id);
-        const auto overlay_texture_offset = process::helpers::find_sso_string_offset(
+        auto overlay_texture_offset = process::helpers::find_sso_string_offset(
             mesh_addrs[0], overlay_texture_str, 0x500, 0x8, true);
+        if (!overlay_texture_offset) {
+            overlay_texture_offset = process::helpers::find_sso_string_offset(
+                mesh_addrs[0], overlay_texture_str, 0x500, 0x8, false);
+        }
         if (!overlay_texture_offset) {
             spdlog::error("Failed to find OverlayTextureId offset");
             return false;

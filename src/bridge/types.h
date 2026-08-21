@@ -246,7 +246,21 @@ namespace bridge {
         std::vector<TextButtonProperty> text_buttons;
     };
 
-    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(DataModelInfo, place_id, game_id, creator_id, job_id)
+    struct HighlightProperty {
+        std::string name;
+        uint8_t depth_mode;
+        bool enabled;
+        uint8_t fill_color_r, fill_color_g, fill_color_b;
+        float fill_transparency;
+        uint8_t outline_color_r, outline_color_g, outline_color_b;
+        float outline_transparency;
+    };
+
+    struct HighlightPropertiesInfo {
+        std::vector<HighlightProperty> highlights;
+    };
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(DataModelInfo, place_id, game_id, creator_id, job_id)
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(WorkspaceInfo, children_count, gravity)
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(PlayerInfo, user_id, account_age, display_name, locale_id)
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(PartProperty, name, anchored, can_collide, can_touch,
@@ -311,5 +325,10 @@ namespace bridge {
         text_stroke_color_b, text_stroke_transparency, text_transparency, text_truncate,
         text_wrapped, text_x_alignment, text_y_alignment, auto_button_color, modal, selected)
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TextButtonPropertiesInfo, text_buttons)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(HighlightProperty, name, depth_mode, enabled, fill_color_r,
+                                       fill_color_g, fill_color_b, fill_transparency,
+                                       outline_color_r, outline_color_g, outline_color_b,
+                                       outline_transparency)
+    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(HighlightPropertiesInfo, highlights)
 
 } // namespace bridge

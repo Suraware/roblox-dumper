@@ -23,6 +23,7 @@ namespace bridge {
         auto read_proximity_prompts_information() -> std::optional<ProximityPromptPropertiesInfo>;
         auto read_text_labels_information() -> std::optional<TextLabelPropertiesInfo>;
         auto read_text_buttons_information() -> std::optional<TextButtonPropertiesInfo>;
+        auto read_highlights_information() -> std::optional<HighlightPropertiesInfo>;
 
       private:
         auto read_value(const roblox::Instance& instance) -> std::optional<json>;
@@ -42,6 +43,7 @@ namespace bridge {
         std::optional<roblox::Instance> m_proximity_prompts_information;
         std::optional<roblox::Instance> m_text_labels_information;
         std::optional<roblox::Instance> m_text_buttons_information;
+        std::optional<roblox::Instance> m_highlights_information;
     };
 
     inline Bridge g_bridge;

@@ -19,30 +19,58 @@ namespace process::helpers::zydis {
                ops[1].mem.disp.value > min_disp;
     }
 
-    inline auto find_function_start(uintptr_t addr) -> std::optional<uintptr_t> {
-        constexpr size_t search_size = 0x1000;
-        uintptr_t region_start = addr - search_size;
-        auto buffer = process::Memory::read_bytes(region_start, search_size);
-        if (buffer.empty())
-            return std::nullopt;
-
-        for (size_t i = buffer.size() - 1; i > 0; i--) {
-            if (buffer[i] == 0xCC) {
-                while (i < buffer.size() && buffer[i] == 0xCC)
-                    i++;
-                return region_start + i;
-            }
-        }
-
-        return std::nullopt;
+    inline auto is_test_mem_imm(const ZydisDecodedInstruction& inst, const ZydisDecodedOperand* ops,
+                                ZydisRegister base, size_t min_disp = 0) -> bool {
+        return inst.mnemonic == ZYDIS_MNEMONIC_TEST && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY &&
+               ops[0].mem.base == base && ops[0].mem.disp.has_displacement &&
+               ops[0].mem.disp.value > min_disp && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE;
     }
 
-    inline auto resolve_rip_mov_store(uintptr_t addr, size_t pre = 0x50, size_t total = 0x200)
+    inline auto resolve_rip_mov(uintptr_t addr, size_t pre = 0x50, size_t total = 0x300)
         -> std::optional<uintptr_t> {
         auto buffer = process::Memory::read_bytes(addr - pre, total);
         if (buffer.empty())
             return std::nullopt;
 
+        ZydisDecoder decoder;
+        ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
+
+        size_t offset = 0;
+
+        while (offset < buffer.size()) {
+            ZydisDecodedInstruction insn;
+            ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT];
+
+            if (!ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, buffer.data() + offset,
+                                                     buffer.size() - offset, &insn, ops))) {
+                offset++;
+                continue;
+            }
+
+            if (insn.mnemonic == ZYDIS_MNEMONIC_MOV) {
+                for (size_t i = 0; i < insn.operand_count; i++) {
+                    auto& op = ops[i];
+
+                    if (op.type == ZYDIS_OPERAND_TYPE_MEMORY && op.mem.base == ZYDIS_REGISTER_RIP) {
+                        ZyanU64 absolute = 0;
+
+                        if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&insn, &op, addr - pre + offset,
+                                                                  &absolute))) {
+                            return static_cast<uintptr_t>(absolute);
+                        }
+                    }
+                }
+            }
+
+            offset += insn.length;
+        }
+
+        return std::nullopt;
+    }
+
+    template <typename Visitor>
+    inline auto scan_instructions(uintptr_t start_addr, const std::vector<uint8_t>& buffer,
+                                  Visitor&& visitor) -> std::optional<uintptr_t> {
         ZydisDecoder decoder;
         ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
 
@@ -57,19 +85,95 @@ namespace process::helpers::zydis {
                 continue;
             }
 
-            if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY &&
-                ops[0].mem.base == ZYDIS_REGISTER_RIP &&
-                ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER) {
-                ZyanU64 absolute = 0;
-                if (ZYAN_SUCCESS(
-                        ZydisCalcAbsoluteAddress(&insn, &ops[0], addr - pre + offset, &absolute))) {
-                    return static_cast<uintptr_t>(absolute);
-                }
-            }
+            if (visitor(start_addr + offset, insn, ops))
+                return start_addr + offset;
 
             offset += insn.length;
         }
+        return std::nullopt;
+    }
 
+    inline auto is_mov_mem_imm32(const ZydisDecodedInstruction& insn,
+                                 const ZydisDecodedOperand* ops, int64_t disp, uint64_t imm_value)
+        -> bool {
+        return insn.mnemonic == ZYDIS_MNEMONIC_MOV && ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY &&
+               ops[0].mem.disp.has_displacement && ops[0].mem.disp.value == disp &&
+               ops[0].element_size == 32 && ops[1].type == ZYDIS_OPERAND_TYPE_IMMEDIATE &&
+               ops[1].imm.value.u == imm_value;
+    }
+
+    inline auto is_mov_rcx_deref(const ZydisDecodedInstruction& insn,
+                                 const ZydisDecodedOperand* ops) -> ZydisRegister {
+        if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && ops[0].type == ZYDIS_OPERAND_TYPE_REGISTER &&
+            ops[0].reg.value == ZYDIS_REGISTER_RCX && ops[1].type == ZYDIS_OPERAND_TYPE_MEMORY &&
+            !ops[1].mem.disp.has_displacement && ops[1].mem.index == ZYDIS_REGISTER_NONE) {
+            return ops[1].mem.base;
+        }
+        return ZYDIS_REGISTER_NONE;
+    }
+
+    inline auto resolve_relative_call(const ZydisDecodedInstruction& insn,
+                                      const ZydisDecodedOperand* ops, uintptr_t insn_addr)
+        -> std::optional<uintptr_t> {
+        if (insn.mnemonic == ZYDIS_MNEMONIC_CALL && ops[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE &&
+            ops[0].imm.is_relative) {
+            ZyanU64 target = 0;
+            if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&insn, &ops[0], insn_addr, &target)))
+                return static_cast<uintptr_t>(target);
+        }
+        return std::nullopt;
+    }
+
+
+    // Walk backwards from addr to the nearest function start (int3 padding or
+    // endbr64 prologue).
+    inline auto find_function_start(uintptr_t addr, size_t search_size = 0x1000)
+        -> std::optional<uintptr_t> {
+        auto buffer = process::Memory::read_bytes(addr - search_size, search_size);
+        if (buffer.empty()) return std::nullopt;
+        for (size_t i = buffer.size() - 1; i > 4; i--) {
+            if (buffer[i] == 0xCC && buffer[i - 1] == 0xCC) {
+                while (i < buffer.size() && buffer[i] == 0xCC) i++;
+                return addr - search_size + i;
+            }
+        }
+        for (size_t i = 4; i < buffer.size(); i++) {
+            if (buffer[i] == 0xFA && buffer[i-1] == 0x1E && buffer[i-2] == 0x0F && buffer[i-3] == 0xF3) {
+                auto a = addr - search_size + i - 3;
+                if (a < addr) return a;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // First MOV [rip+disp], reg store from func_start -> absolute address.
+    inline auto resolve_rip_mov_store(uintptr_t func_start, size_t total = 0x400)
+        -> std::optional<uintptr_t> {
+        auto buffer = process::Memory::read_bytes(func_start, total);
+        if (buffer.empty()) return std::nullopt;
+        ZydisDecoder decoder;
+        ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_STACK_WIDTH_64);
+        size_t offset = 0;
+        while (offset < buffer.size()) {
+            ZydisDecodedInstruction insn;
+            ZydisDecodedOperand ops[ZYDIS_MAX_OPERAND_COUNT];
+            if (!ZYAN_SUCCESS(ZydisDecoderDecodeFull(&decoder, buffer.data() + offset,
+                                                     buffer.size() - offset, &insn, ops))) {
+                offset++;
+                continue;
+            }
+            if (insn.mnemonic == ZYDIS_MNEMONIC_MOV && insn.operand_count >= 1 &&
+                ops[0].type == ZYDIS_OPERAND_TYPE_MEMORY &&
+                ops[0].mem.base == ZYDIS_REGISTER_RIP &&
+                ops[1].type == ZYDIS_OPERAND_TYPE_REGISTER) {
+                ZyanU64 absolute = 0;
+                if (ZYAN_SUCCESS(ZydisCalcAbsoluteAddress(&insn, &ops[0],
+                                                          func_start + offset, &absolute))) {
+                    return static_cast<uintptr_t>(absolute);
+                }
+            }
+            offset += insn.length;
+        }
         return std::nullopt;
     }
 

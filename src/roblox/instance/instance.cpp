@@ -10,13 +10,14 @@ namespace roblox {
             return std::nullopt;
         }
 
-        const auto name_pointer =
-            process::Memory::read<uintptr_t>(m_address + offsets::Instance::Name);
-        if (!name_pointer) {
+        const auto name_container =
+            process::Memory::read<uintptr_t>(m_address + offsets::Instance::NameContainer);
+        if (!name_container || *name_container < 0x10000) {
             return std::nullopt;
         }
 
-        return process::Memory::read_roblox_string(*name_pointer);
+        // Sober/Linux: libc++ string inside the name container record.
+        return process::Memory::read_roblox_string(*name_container + offsets::Instance::Name);
     }
 
     auto Instance::get_class_name() const -> std::optional<std::string> {
@@ -26,15 +27,13 @@ namespace roblox {
 
         const auto class_descriptor =
             process::Memory::read<uintptr_t>(m_address + offsets::Instance::ClassDescriptor);
-
-        if (!class_descriptor) {
+        if (!class_descriptor || *class_descriptor < 0x10000) {
             return std::nullopt;
         }
 
-        const auto class_name_pointer =
-            process::Memory::read<uintptr_t>(*class_descriptor + offsets::Instance::ClassName);
-
-        if (!class_name_pointer) {
+        const auto class_name_pointer = process::Memory::read<uintptr_t>(
+            *class_descriptor + offsets::ClassDescriptor::ClassName);
+        if (!class_name_pointer || *class_name_pointer < 0x10000) {
             return std::nullopt;
         }
 
@@ -88,6 +87,46 @@ namespace roblox {
             if (child_name && *child_name == name) {
                 return child;
             }
+        }
+
+        return std::nullopt;
+    }
+
+    auto Instance::get_function_address(std::string_view func_name) const
+        -> std::optional<uintptr_t> {
+        if (!is_valid() || !offsets::ClassDescriptor::FunctionDescriptors ||
+            !offsets::Descriptor::Name || !offsets::FunctionDescriptor::Function)
+            return std::nullopt;
+
+        auto class_desc =
+            process::Memory::read<uintptr_t>(m_address + offsets::Instance::ClassDescriptor);
+        if (!class_desc)
+            return std::nullopt;
+
+        auto func_list = process::Memory::read<uintptr_t>(
+            *class_desc + offsets::ClassDescriptor::FunctionDescriptors);
+        if (!func_list || !*func_list)
+            return std::nullopt;
+
+        uintptr_t current = *func_list;
+        for (int i = 0; i < 500; i++) {
+            auto entry = process::Memory::read<uintptr_t>(current);
+            if (!entry || !*entry)
+                break;
+
+            auto name_ptr =
+                process::Memory::read<uintptr_t>(*entry + offsets::Descriptor::Name);
+            if (name_ptr && *name_ptr > 0x10000) {
+                auto name = process::Memory::read_roblox_string(*name_ptr);
+                if (name && *name == func_name) {
+                    auto addr = process::Memory::read<uintptr_t>(
+                        *entry + offsets::FunctionDescriptor::Function);
+                    if (addr && *addr > 0x10000)
+                        return *addr;
+                }
+            }
+
+            current += 0x10;
         }
 
         return std::nullopt;

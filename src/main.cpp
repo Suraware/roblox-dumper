@@ -1,5 +1,6 @@
 #include "config.h"
 #include "dumper/dumper.h"
+#include "writer/internal_writer.h"
 #include "writer/struct_writer.h"
 #include "writer/writer.h"
 #include <chrono>
@@ -39,6 +40,7 @@ auto main() -> int {
     dumper::writer::g_python_writer.write("offsets", elapsed);
     dumper::writer::g_csharp_writer.write("offsets", elapsed);
     dumper::writer::g_struct_writer.write("structs", elapsed);
+    dumper::writer::g_internal_writer.write("internal", elapsed);
 
     logger::print_error_summary();
 

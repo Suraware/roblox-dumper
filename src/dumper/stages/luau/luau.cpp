@@ -181,19 +181,37 @@ namespace dumper::stages::luau {
 
         const uintptr_t image_base = resolve_image_base(check_addr);
         const size_t check_rva = check_addr - image_base;
-        g_dumper.add_offset("Luau", "LuaDCheckStack", check_rva, "",
+        g_dumper.add_internal_offset("Luau", "LuaDCheckStack", check_rva, "",
                             FieldType::Pointer);
         if (global_ptr_rva) {
-            g_dumper.add_offset("Luau", "GlobalStatePointer",
+            g_dumper.add_internal_offset("Luau", "GlobalStatePointer",
                                 global_ptr_rva - image_base, "",
                                 FieldType::Pointer);
         }
 
-        // lua_State field offsets (from the check function's memory accesses).
-        g_dumper.add_offset("lua_State", "top", 0x8, "", FieldType::Pointer);
-        g_dumper.add_offset("lua_State", "stack_end", 0x10, "", FieldType::Pointer);
-        g_dumper.add_offset("lua_State", "global", 0x18, "", FieldType::Pointer);
-        g_dumper.add_offset("lua_State", "stack", 0x28, "", FieldType::Pointer);
+        // lua_State field offsets:
+        //   top/stack       - luaD_checkstack accesses
+        //   global          - luaT_gettmbyobj: *(L+0x20) = global_State
+        g_dumper.add_internal_offset("lua_State", "top", 0x8, "", FieldType::Pointer);
+        g_dumper.add_internal_offset("lua_State", "stack_end", 0x10, "",
+                                     FieldType::Pointer);
+        g_dumper.add_internal_offset("lua_State", "global", 0x20, "",
+                                     FieldType::Pointer);
+        g_dumper.add_internal_offset("lua_State", "stack", 0x28, "",
+                                     FieldType::Pointer);
+
+        // global_State offsets (from luaT_gettmbyobj TM lookups):
+        //   *(global + 8*event + 808)  -> tagmethod cache entry
+        //   *(global + 8*event + 1088) -> tagmethod name string
+        g_dumper.add_internal_offset("global_State", "TmCache", 808, "",
+                                     FieldType::Pointer);
+        g_dumper.add_internal_offset("global_State", "TmNames", 1088, "",
+                                     FieldType::Pointer);
+
+        // TValue: value union at +0, type tag (dword) at +0xC;
+        // sizeof(TValue) == 16 ((top - stack) >> 4 in checkstack).
+        g_dumper.add_internal_offset("TValue", "Value", 0x0, "", FieldType::None);
+        g_dumper.add_internal_offset("TValue", "Tag", 0xC, "", FieldType::UInt32);
 
         spdlog::info("Luau: luaD_checkstack at RVA 0x{:X}, global ptr slot 0x{:X}",
                      check_rva, global_ptr_rva);

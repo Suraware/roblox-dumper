@@ -16,3 +16,4 @@ src_snapshot_*/
 src_v3_linux_backup/
 *.log
 .cache/
+structs.h

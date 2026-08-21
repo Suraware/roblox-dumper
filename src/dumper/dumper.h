@@ -96,6 +96,10 @@ namespace dumper {
         auto add_offset(const std::string& namespace_name, const std::string& offset_name,
                         size_t offset, const std::string& comment = "",
                         FieldType type = FieldType::None) -> void;
+        auto add_internal_offset(const std::string& namespace_name,
+                                 const std::string& offset_name, size_t offset,
+                                 const std::string& comment = "",
+                                 FieldType type = FieldType::None) -> void;
         auto add_enum(const std::string& enum_name, const std::string& entry_name, int value)
             -> void;
         auto set_namespace_comment(const std::string& namespace_name, const std::string& comment)
@@ -104,6 +108,9 @@ namespace dumper {
             -> std::optional<size_t>;
 
         std::unordered_map<std::string, std::vector<OffsetEntry>> m_offsets;
+        // Internal-only offsets (Luau VM, in-process globals) - emitted to a
+        // separate file so consumer headers stay scoped to their use case.
+        std::unordered_map<std::string, std::vector<OffsetEntry>> m_internal_offsets;
         std::unordered_map<std::string, std::vector<EnumEntry>> m_enums;
         std::unordered_map<std::string, std::string> m_namespace_comments;
 

@@ -146,6 +146,16 @@ for (auto& thread : threads) {
         spdlog::info("Added offset: {}::{} = 0x{:X}", namespace_name, offset_name, offset);
     }
 
+auto Dumper::add_internal_offset(const std::string& namespace_name,
+                                 const std::string& offset_name, size_t offset,
+                                 const std::string& comment, FieldType type) -> void {
+        std::lock_guard<std::mutex> lock(m_offset_mutex);
+        m_internal_offsets[namespace_name].push_back(
+            {offset_name, offset, comment, type});
+        spdlog::info("Added internal offset: {}::{} = 0x{:X}", namespace_name,
+                     offset_name, offset);
+    }
+
 auto Dumper::add_enum(const std::string& enum_name, const std::string& entry_name, int value)
         -> void {
         std::lock_guard<std::mutex> lock(m_offset_mutex);

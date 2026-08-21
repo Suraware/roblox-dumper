@@ -84,6 +84,21 @@ namespace dumper::stages::luau {
             {"LuaResume",            0x65A4DA0, {0x55, 0x48, 0x89, 0xE5, 0x0F, 0xB6, 0x47, 0x03}, 8},
         };
 
+        // Base-library C API from the luaL_Reg table at 0x6C40230
+        // (names resolved statically against this exact build).
+        const InternalFunc base_api[] = {
+            {"CollectGarbage", 0x4240072, {0}, 0},
+            {"GetFEnv",        0x4240B26, {0}, 0},
+            {"SetFEnv",        0x4240CD8, {0}, 0},
+            {"Require",        0x26E5E10, {0}, 0},
+            {"Warn",           0x286CBF2, {0}, 0},
+            {"PluginManager",  0x42406EE, {0}, 0},
+            {"UserSettings",   0x271693E, {0}, 0},
+            {"VersionFn",      0x4240A80, {0}, 0},
+            {"StatsFn",        0x42408C0, {0}, 0},
+            {"LuaGRunError",   0x2875E09, {0}, 0},
+        };
+
         bool ok = true;
         for (const auto& fn : funcs) {
             const uintptr_t addr = process::g_process.get_module_base() + fn.rva;
@@ -92,6 +107,17 @@ namespace dumper::stages::luau {
                 std::memcmp(bytes.data(), fn.prologue, fn.prologue_len) != 0) {
                 spdlog::warn("luau: {} prologue mismatch - skipping", fn.name);
                 ok = false;
+                continue;
+            }
+            g_dumper.add_internal_offset("Functions", fn.name, fn.rva, "",
+                                         FieldType::Pointer);
+        }
+        // No prologue data for the reg-table entries - readability check only.
+        for (const auto& fn : base_api) {
+            const uintptr_t addr = process::g_process.get_module_base() + fn.rva;
+            auto bytes = process::Memory::read_bytes(addr, 1);
+            if (bytes.empty()) {
+                spdlog::warn("luau: {} unreadable - skipping", fn.name);
                 continue;
             }
             g_dumper.add_internal_offset("Functions", fn.name, fn.rva, "",

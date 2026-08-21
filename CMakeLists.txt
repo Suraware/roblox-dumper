@@ -48,3 +48,7 @@ file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.cxx" "src/*.cc")
 
 add_executable(roblox-dumper ${SOURCES})
 target_link_libraries(roblox-dumper PRIVATE spdlog::spdlog glm::glm nlohmann_json::nlohmann_json Zydis pthread)
+
+# PoC: ptrace-based remote function invocation (executor primitive demo)
+add_executable(poc_remote_call EXCLUDE_FROM_ALL poc_remote_call.cpp)
+target_compile_options(poc_remote_call PRIVATE -O2 -Wall)

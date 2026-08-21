@@ -11,7 +11,7 @@
 //   slot math: (top - stack) >> 4  => sizeof(TValue) == 16
 //
 // The prologue also loads a module-global pointer (mov r15,[rip+...]); its
-target is emitted as Luau::VmAuxStruct - purpose not yet fully identified.
+// target is emitted as Luau::VmAuxStruct - purpose not yet fully identified.
 #include "luau.h"
 #include "dumper/dumper.h"
 #include "process/memory/memory.h"

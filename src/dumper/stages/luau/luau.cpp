@@ -219,7 +219,7 @@ namespace dumper::stages::luau {
         g_dumper.add_internal_offset("Luau", "LuaDCheckStack", check_rva, "",
                             FieldType::Pointer);
         if (global_ptr_rva) {
-            g_dumper.add_internal_offset("Luau", "GlobalStatePointer",
+            g_dumper.add_internal_offset("Luau", "VmAuxStruct",
                                 global_ptr_rva - image_base, "",
                                 FieldType::Pointer);
         }

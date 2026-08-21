@@ -1,6 +1,7 @@
 #include "dumper.h"
 #include "bridge/bridge.h"
 #include "process/memory/memory.h"
+#include "stages/luau/luau.h"
 #include "stages/player/player.h"
 #include "stages/property_descriptors/property_descriptors.h"
 #include "stages/registry.h"
@@ -121,7 +122,9 @@ namespace dumper {
         // interned-Name layout). Runs synchronously: it is scan-heavy.
         stages::descriptors::dump();
 
-                for (const auto& stage : stages::g_stage_registry) {
+                        threads.emplace_back(safe([]() { stages::luau::dump(); }, "luau"));
+
+for (const auto& stage : stages::g_stage_registry) {
             threads.emplace_back([&stage]() {
                 if (!stage.dump()) {
                     spdlog::error("Failed to dump {}", stage.name);
